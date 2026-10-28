@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+if [[ ! -d "/Users/shouta/Development/repositories/github.com/5h0utat0t2uka/git-scrivener" ]]; then
+  echo "Cannot find source directory; Did you move it?"
+  echo "(Looking for "/Users/shouta/Development/repositories/github.com/5h0utat0t2uka/git-scrivener")"
+  echo 'Cannot force reload with this script - use "direnv reload" manually and then try again'
+  exit 1
+fi
+
+# rebuild the cache forcefully
+_nix_direnv_force_reload=1 direnv exec "/Users/shouta/Development/repositories/github.com/5h0utat0t2uka/git-scrivener" true
