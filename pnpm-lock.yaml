@@ -173,8 +173,8 @@ importers:
         specifier: 1.8.1
         version: 1.8.1
       openai:
-        specifier: 7.41.0
-        version: 7.41.0(zod@4.6.7)
+        specifier: 7.42.0
+        version: 7.42.0(zod@4.6.7)
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -328,8 +328,8 @@ packages:
   fast-wrap-ansi@0.2.2:
     resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
 
-  openai@7.41.0:
-    resolution: {integrity: sha512-k8dr5CXaK8+3f6iOrjQQz7rw7zT3QQZZtI28KOnVmU5Q10vX+Iyik4cE20ohMmZ7EnumUVC7S6nmjEBd/wdlLg==}
+  openai@7.42.0:
+    resolution: {integrity: sha512-RziM2bxp1k24mTLtunije+OOCGRC+qtK0YNYPWkrTdKJLJ65WYW+rPYxlLbnBzU4WwINFCFa0OjCgbsX+fif/w==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
@@ -457,7 +457,7 @@ snapshots:
     dependencies:
       fast-string-width: 3.0.2
 
-  openai@7.41.0(zod@4.6.7):
+  openai@7.42.0(zod@4.6.7):
     optionalDependencies:
       zod: 4.6.7
 
