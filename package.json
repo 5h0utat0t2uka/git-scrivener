@@ -19,9 +19,15 @@
     "format": "oxfmt --write src test",
     "format:check": "oxfmt --check src test"
   },
-  "packageManager": "pnpm@10.34.9",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": ">=12",
+      "onFail": "error"
+    }
+  },
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24"
   },
   "dependencies": {
     "@clack/core": "1.5.1",

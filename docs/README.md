@@ -66,7 +66,7 @@ cd REPO
 git switch -c dev
 ```
 
-- [`nix/fixed-node.nix`](../nix/fixed-node.nix) では Node.js 24 を `flake.lock` で固定し、pnpm の `version` と `hash` を `package.json` の `packageManager` に合わせます。  
+- [`flake.nix`](../flake.nix) と [`nix/package.nix`](../nix/package.nix) では、`flake.lock` で固定した Nixpkgs の `pkgs.nodejs`・`pkgs.pnpm` を使います。Nixpkgs 更新時は提供バージョンを確認し、`package.json` の `engines.node`・`packageManager` との整合性を確認します。  
 - [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) の内容をプロジェクトに合わせて変更  
 - Dependabotの設定  
   - [`.github/dependabot.yml`](../.github/dependabot.yml.template) の `assignees`を変更  

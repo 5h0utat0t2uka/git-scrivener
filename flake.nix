@@ -34,15 +34,9 @@
             })
           ];
         };
-        fixedNode = import ./nix/fixed-node.nix { inherit pkgs; };
-        scrivener = import ./nix/package.nix { inherit pkgs fixedNode; };
+        scrivener = import ./nix/package.nix { inherit pkgs; };
         preCommit = import ./nix/pre-commit.nix {
-          inherit
-            pkgs
-            git-hooks
-            system
-            fixedNode
-            ;
+          inherit pkgs git-hooks system;
           src = ./.;
         };
         agentLib = agent-skills.lib.agent-skills;
@@ -84,8 +78,8 @@
         };
         devShells.default = pkgs.mkShell {
           packages = [
-            fixedNode.nodejs
-            fixedNode.pnpm
+            pkgs.nodejs
+            pkgs.pnpm
             pkgs.git
             pkgs.age
             pkgs.betterleaks
