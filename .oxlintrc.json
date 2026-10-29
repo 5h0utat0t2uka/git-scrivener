@@ -1,0 +1,9 @@
+{
+  "plugins": ["typescript", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "node": true
+  }
+}

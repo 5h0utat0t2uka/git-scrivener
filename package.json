@@ -1,0 +1,36 @@
+{
+  "name": "git-scrivener",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generate Conventional Commit messages from staged Git changes using OpenAI.",
+  "type": "module",
+  "bin": {
+    "git-scrivener": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "node src/cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "lint": "oxlint src test",
+    "format": "oxfmt --write src test",
+    "format:check": "oxfmt --check src test"
+  },
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "@clack/core": "1.5.1",
+    "@clack/prompts": "1.8.1",
+    "openai": "7.41.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

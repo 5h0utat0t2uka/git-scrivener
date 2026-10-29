@@ -1,0 +1,9 @@
+.direnv
+.pre-commit-config.yaml
+.env
+/.agents/skills/
+/node_modules/
+/dist/
+/.test-tmp/
+/result
+/result-*

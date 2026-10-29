@@ -9,6 +9,18 @@ This template includes basic security measures:
 - [Betterleaks](https://github.com/betterleaks/betterleaks) for secret scanning  
 - [SOPS](https://github.com/getsops/sops) for secret encryption  
 
+## Project-local agent skills
+
+Run from the repository root:
+
+```sh
+nix run .#skills-install-local
+```
+
+[agent-skills-nix](https://github.com/Kyure-A/agent-skills-nix) manages `.agents/skills/` using `copy-tree`, so the installed skills are regular files rather than links into the Nix store. This generated directory is ignored by Git. Skill installation is explicit and does not run when entering the development shell.
+
+The selection in `flake.nix` is currently empty, so no skills are installed. Add reviewed skill sources and an explicit selection before installing skills. Keep source revisions pinned in `flake.lock`, and keep manually maintained files outside the generated directory.
+
 # Requirements  
 - **Nix with flakes enabled**  
   If you have not installed Nix yet:  
@@ -54,7 +66,7 @@ cd REPO
 git switch -c dev
 ```
 
-- [`nix/fixed-node.nix`](../nix/fixed-node.nix) の `nodeVersion`, `pnpmVersion` をプロジェクトに合わせて変更  
+- [`nix/fixed-node.nix`](../nix/fixed-node.nix) では Node.js 24 を `flake.lock` で固定し、pnpm の `version` と `hash` を `package.json` の `packageManager` に合わせます。  
 - [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) の内容をプロジェクトに合わせて変更  
 - Dependabotの設定  
   - [`.github/dependabot.yml`](../.github/dependabot.yml.template) の `assignees`を変更  

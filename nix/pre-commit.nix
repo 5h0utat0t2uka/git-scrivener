@@ -1,4 +1,10 @@
-{ pkgs, git-hooks, system, fixedNode, src }:
+{
+  pkgs,
+  git-hooks,
+  system,
+  fixedNode,
+  src,
+}:
 
 git-hooks.lib.${system}.run {
   inherit src;
@@ -14,7 +20,7 @@ git-hooks.lib.${system}.run {
       enable = true;
       name = "node-test";
       entry = "${fixedNode.pnpm}/bin/pnpm test";
-      files = "^(apps|packages)/.*\\.tsx?$";
+      files = "^((src|test)/.*\\.ts|package\\.json|pnpm-lock\\.yaml|tsconfig(\\.build)?\\.json)$";
       pass_filenames = false;
     };
     # biome = {
@@ -24,18 +30,18 @@ git-hooks.lib.${system}.run {
     #   entry = "${pkgs.biome}/bin/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched";
     #   pass_filenames = true;
     # };
-    # oxfmt = {
-    #   enable = true;
-    #   package = pkgs.oxfmt;
-    #   settings.mode = "write";
-    # };
-    # oxlint = {
-    #   enable = true;
-    #   name = "oxlint";
-    #   package = pkgs.oxlint;
-    #   entry = "${pkgs.oxlint}/bin/oxlint";
-    #   files = "\\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$";
-    # };
+    oxfmt = {
+      enable = true;
+      package = pkgs.oxfmt;
+      settings.mode = "write";
+    };
+    oxlint = {
+      enable = true;
+      name = "oxlint";
+      package = pkgs.oxlint;
+      entry = "${pkgs.oxlint}/bin/oxlint";
+      files = "\\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$";
+    };
     betterleaks = {
       enable = true;
       name = "betterleaks";
@@ -45,6 +51,7 @@ git-hooks.lib.${system}.run {
     semgrep = {
       enable = true;
       name = "semgrep";
+      package = pkgs.semgrep;
       entry = "${pkgs.semgrep}/bin/semgrep --config=p/default --config=p/typescript --config=p/javascript --config=p/react --metrics=off --error .";
       pass_filenames = false;
     };
