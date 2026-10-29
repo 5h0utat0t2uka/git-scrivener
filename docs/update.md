@@ -16,10 +16,11 @@ nix eval --impure --json --expr '
 '
 ```
 
-- `package.json` の `packageManager` を、確認した `pnpm@バージョン` に変更
-- Node.jsも `engines.node`（現在 `>=24 <25`）の範囲内か確認する
+- Node.jsが `package.json`の`engines.node`の範囲か確認する
+- `package.json` の `packageManager` を確認した `pnpm@バージョン` に変更
 
 3. 開発環境とlockfileを更新する
+`pnpm --version` が手順1の版と一致することを確認
 ```sh
 direnv reload
 ```
@@ -28,10 +29,8 @@ pnpm --version
 pnpm install --ignore-scripts
 ```
 
-`pnpm --version` が手順1の版と一致することを確認します。
-
 4. 依存ハッシュを取得する
-`nix/package.nix` の `pnpmDeps` 内を、一時的に次へ変更します。
+`nix/package.nix` の `pnpmDeps` 内を、一時的に次へ変更
 ```nix
 hash = "";
 ```
@@ -39,15 +38,13 @@ hash = "";
 nix build --no-link --no-write-lock-file --print-build-logs '.#git-scrivener.pnpmDeps'
 ```
 
-想定される `hash mismatch` の **`got: sha256-...`** を、先ほどの `hash` に設定します。それ以外のエラーなら、先にその原因を解消します。[公式手順](https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/node/fetch-pnpm-deps/pnpm-config-hook.sh)
+想定される `hash mismatch` の **`got: sha256-...`** を、先ほどの `hash` に設定、それ以外のエラーなら、先にその原因を解消します。[公式手順](https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/node/fetch-pnpm-deps/pnpm-config-hook.sh)
 
 5. パッケージ全体を検証する
 ```sh
 nix fmt
 nix build --no-write-lock-file --print-build-logs .#git-scrivener
 ```
-
-型検査・Lint・テスト・起動確認がビルド内で実行されます。
 
 6. 同じPRへ変更を追加する
 ```sh
@@ -56,6 +53,5 @@ git diff -- package.json pnpm-lock.yaml nix/package.nix
 git add package.json pnpm-lock.yaml nix/package.nix
 git commit -m "chore: align pnpm with updated nixpkgs"
 git push
+gh pr merge <PR番号> --squash --delete-branch
 ```
-
-GitHub上でPR全体を確認してからマージします。
