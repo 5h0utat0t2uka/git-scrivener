@@ -120,7 +120,12 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
     return;
   }
   terminal.step("Committing with Git");
-  await commitCandidate(accepted, snapshot, { onOutputLine: terminal.commitLine });
+  const commitOutput = terminal.commitOutput();
+  try {
+    await commitCandidate(accepted, snapshot, commitOutput ? { onOutput: commitOutput.write } : {});
+  } finally {
+    commitOutput?.finish();
+  }
   terminal.finish("Commit created.");
 }
 

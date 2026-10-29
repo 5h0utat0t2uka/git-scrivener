@@ -165,23 +165,47 @@ test("progress shows elapsed time and releases its signal handlers on success an
 test("Git output continues the timeline without extra gaps and preserves indentation", (t) => {
   const view = terminal(t);
   view.ui.step("Committing with Git");
-  view.ui.commitLine("[main (root-commit) 625f1fe] docs: add README");
-  view.ui.commitLine(" 1 file changed, 1 insertion(+)");
-  view.ui.commitLine("");
-  view.ui.commitLine(" create mode 100644 日本語.md");
+  const output = view.ui.commitOutput()!;
+  output.write("Detect hardcoded secrets...");
+  assert.ok(stripVTControlCharacters(view.text()).endsWith("│  Detect hardcoded secrets..."));
+  output.write("Passed\nzizmor...(no files to check)Skipped\n");
+  output.write("[main (root-commit) 625f1fe] docs: add README\n");
+  output.write(" 1 file changed, 1 insertion(+)\n\n");
+  output.write(" create mode 100644 日本語.md");
+  output.finish();
   view.ui.finish("Commit created.");
   assert.equal(
     stripVTControlCharacters(view.text()),
     "│\n○  Committing with Git\n" +
+      "│  Detect hardcoded secrets...Passed\n│  zizmor...(no files to check)Skipped\n" +
       "│  [main (root-commit) 625f1fe] docs: add README\n" +
       "│   1 file changed, 1 insertion(+)\n│\n" +
       "│   create mode 100644 日本語.md\n│\n└  Commit created.\n\n",
   );
 
   const plain = terminal(t, true);
-  plain.ui.commitLine(" 1 file changed, 1 insertion(+)");
-  plain.ui.commitLine("");
-  assert.equal(plain.text(), " 1 file changed, 1 insertion(+)\n\n");
+  assert.equal(
+    plain.ui.commitOutput(),
+    undefined,
+    "plain mode must inherit Git's terminal descriptors",
+  );
+  assert.equal(plain.text(), "");
+});
+
+test("commit output handles split CRLF, carriage returns, and partial final lines", (t) => {
+  const view = terminal(t);
+  const output = view.ui.commitOutput()!;
+  output.write("Checking...");
+  output.write("\r");
+  output.write("Passed     \r");
+  output.write("\n\n日本");
+  output.write("語");
+  output.finish();
+  output.finish();
+  assert.equal(
+    stripVTControlCharacters(view.text()),
+    "│  Checking...\r│  Passed     \r\n│\n│  日本語\n",
+  );
 });
 
 test("plain progress and output contain no cursor commands or ANSI styling", async (t) => {

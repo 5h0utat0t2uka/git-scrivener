@@ -1,13 +1,14 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import { assertSnapshotUnchanged } from "./git.ts";
 import type { StagedSnapshot } from "./git.ts";
 import { validateCommitMessage } from "./message.ts";
 
 export class CommitError extends Error {}
+const executeFile = promisify(execFile);
 
 export async function commitCandidate(
   message: string,
@@ -16,12 +17,12 @@ export async function commitCandidate(
     cwd = process.cwd(),
     env = process.env,
     temporaryDirectory = tmpdir(),
-    onOutputLine,
+    onOutput,
   }: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     temporaryDirectory?: string;
-    onOutputLine?: (line: string) => void;
+    onOutput?: (chunk: string) => void;
   } = {},
 ): Promise<void> {
   const validated = validateCommitMessage(message).message;
@@ -30,29 +31,58 @@ export async function commitCandidate(
     await chmod(directory, 0o700);
     const file = join(directory, "COMMIT_EDITMSG");
     await writeFile(file, `${validated}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    await assertSnapshotUnchanged(snapshot, { cwd, env });
     const commitEnv = { ...env };
     delete commitEnv.OPENAI_API_KEY;
+    let shell: string | undefined;
+    if (onOutput) {
+      try {
+        const result = await executeFile("git", ["var", "GIT_SHELL_PATH"], {
+          cwd,
+          env: commitEnv,
+          encoding: "utf8",
+          maxBuffer: 64 * 1024,
+          timeout: 30_000,
+        });
+        shell = result.stdout.replace(/\n$/, "");
+      } catch {
+        throw new CommitError("Could not resolve Git's POSIX shell.");
+      }
+      if (!shell.trim()) throw new CommitError("Git did not provide a POSIX shell.");
+    }
+    await assertSnapshotUnchanged(snapshot, { cwd, env });
     const ignoreInterrupt = () => {};
     process.on("SIGINT", ignoreInterrupt);
     process.on("SIGQUIT", ignoreInterrupt);
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn("git", ["commit", "--file", file], {
-          cwd,
-          env: commitEnv,
-          // Keep input and diagnostics attached to the terminal for hooks and signing.
-          stdio: ["inherit", onOutputLine ? "pipe" : "inherit", "inherit"],
-        });
-        const lines =
-          onOutputLine && child.stdout
-            ? createInterface({ input: child.stdout, terminal: false, crlfDelay: Infinity })
-            : undefined;
-        if (lines && onOutputLine) lines.on("line", onOutputLine);
+        const args = ["commit", "--file", file];
+        // Merge both output descriptors into one pipe before Git starts, preserving write order.
+        // The shell program is constant; all Git arguments, including the filename, stay in argv.
+        const child = spawn(
+          shell ?? "git",
+          shell ? ["-c", 'exec git "$@" 2>&1', "git", ...args] : args,
+          {
+            cwd,
+            env: commitEnv,
+            // Do not intercept input or create a new session: /dev/tty remains available for signing.
+            stdio: ["inherit", onOutput ? "pipe" : "inherit", "inherit"],
+          },
+        );
+        let outputFailed = false;
+        if (onOutput && child.stdout) {
+          child.stdout.setEncoding("utf8");
+          child.stdout.on("data", onOutput);
+          child.stdout.once("error", () => {
+            outputFailed = true;
+          });
+        }
         child.once("error", () => reject(new CommitError("Could not start git commit.")));
         child.once("close", (code, signal) => {
-          lines?.close();
-          if (code === 0 && signal === null) resolve();
+          if (outputFailed) {
+            reject(
+              new CommitError("Could not read Git's output. Check git status before trying again."),
+            );
+          } else if (code === 0 && signal === null) resolve();
           else
             reject(new CommitError("Git commit failed. Review Git's output before trying again."));
         });

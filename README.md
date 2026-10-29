@@ -1,3 +1,10 @@
+```txt
+▘▗         ▘          
+▛▌▌▜▘  ▛▘▛▘▛▘▌▌▌█▌▛▌█▌▛▘
+▙▌▌▐▖  ▄▌▙▖▌ ▌▚▘▙▖▌▌▙▖▌ 
+▄▌                                                                                                                                 
+```
+
 # git-scrivener
 
 A personal CLI for generating English Conventional Commit messages from staged Git changes using OpenAI.
@@ -62,7 +69,7 @@ Immediately before committing or regenerating, the CLI checks that HEAD, its bra
 
 Commits use the configured Git hooks and signing settings, including SSH signing. Hook or signing failures stop the operation without an unsigned retry or an index reset. The API key is removed from the environment passed to the editor and commit process. Tests cover hook execution and simulated SSH signing failure; live OpenAI access and physical YubiKey signing still need an end-to-end check in the target environment.
 
-Git's standard output is displayed line by line with a `│` guide, preserving its indentation. Standard input and standard error remain connected to the terminal for signing prompts, diagnostics, and commit hooks. Plain mode prints these output lines without a guide.
+Git's standard output and standard error, including hook results, are merged into one stream and displayed with a `│` guide. Partial lines are displayed immediately, and indentation is preserved. Input remains connected to the terminal, and signing programs can still use `/dev/tty`. Prompts written directly to `/dev/tty` are outside the captured stream and are not decorated. In the decorated mode, Git and hook output descriptors are pipes rather than TTYs; use `--plain` for hooks requiring terminal output or full-screen controls. Plain mode leaves all three descriptors connected directly to the terminal.
 
 The package declares the executable name `git-scrivener`, for invocation as `git scrivener` once installed on `PATH`.
 

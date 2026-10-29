@@ -86,9 +86,40 @@ export function createUi({
       else log.error(message, { output: errorOutput, withGuide: true });
     },
     step,
-    commitLine(line: string) {
-      if (plain) output.write(`${line}\n`);
-      else log.message(line, { ...options, spacing: 0 });
+    commitOutput() {
+      // Plain mode leaves Git and interactive hooks connected directly to the terminal.
+      if (plain) return undefined;
+      const guide = styleText("gray", S_BAR);
+      let atLineStart = true;
+      let afterCarriageReturn = false;
+      return {
+        write(chunk: string) {
+          // Emit partial lines immediately, including prompts that have no trailing newline.
+          for (const part of chunk.split(/(\r|\n)/)) {
+            if (!part) continue;
+            if (part === "\r") {
+              output.write("\r");
+              atLineStart = true;
+              afterCarriageReturn = true;
+            } else if (part === "\n") {
+              if (atLineStart && !afterCarriageReturn) output.write(guide);
+              output.write("\n");
+              atLineStart = true;
+              afterCarriageReturn = false;
+            } else {
+              if (atLineStart) output.write(`${guide}  `);
+              output.write(part);
+              atLineStart = false;
+              afterCarriageReturn = false;
+            }
+          }
+        },
+        finish() {
+          if (!atLineStart || afterCarriageReturn) output.write("\n");
+          atLineStart = true;
+          afterCarriageReturn = false;
+        },
+      };
     },
     finish(message: string) {
       if (plain) output.write(`${message}\n`);

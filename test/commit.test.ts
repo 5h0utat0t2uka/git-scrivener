@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { commitCandidate, CommitError } from "../src/commit.ts";
@@ -14,19 +14,21 @@ test("commits the initial index and leaves later unstaged edits untouched", asyn
   repo.write("file.txt", "unstaged after generation\n");
   const message = "feat: keep $(touch unexpected) and quotes 'literal'\n\nRefs: #123";
   const output: string[] = [];
+  const temporaryDirectory = join(repo.cwd, "temporary 'quoted' $(touch injected)");
+  mkdirSync(temporaryDirectory);
   await commitCandidate(message, snapshot, {
     ...repo,
-    temporaryDirectory: repo.cwd,
-    onOutputLine: (line) => output.push(line),
+    temporaryDirectory,
+    onOutput: (chunk) => output.push(chunk),
   });
-  assert.ok(output[0]?.includes(message.split("\n")[0]!));
-  assert.ok(output.at(-1)?.endsWith("file.txt"), "finish reading Git output before returning");
-  assert.ok(output.every((line) => !line.includes("\n")));
+  assert.ok(output.join("").split("\n")[0]?.includes(message.split("\n")[0]!));
+  assert.ok(output.join("").endsWith("file.txt\n"), "finish reading Git output before returning");
   assert.equal(repo.git(["show", "HEAD:file.txt"]), "staged\n");
   assert.equal(repo.git(["log", "-1", "--format=%B"]).trim(), message);
   assert.equal(readFileSync(join(repo.cwd, "file.txt"), "utf8"), "unstaged after generation\n");
   assert.equal(existsSync(join(repo.cwd, "unexpected")), false);
-  assert.ok(!readdirSync(repo.cwd).some((name) => name.startsWith("git-scrivener-commit-")));
+  assert.equal(existsSync(join(repo.cwd, "injected")), false);
+  assert.deepEqual(readdirSync(temporaryDirectory), []);
 });
 
 test("runs the configured pre-commit and commit-msg hooks", async (t) => {
@@ -35,7 +37,7 @@ test("runs the configured pre-commit and commit-msg hooks", async (t) => {
   for (const name of ["pre-commit", "commit-msg"]) {
     repo.write(
       `empty-hooks/${name}`,
-      `#!${shell}\nprintf 'ran' > '${name}-ran'\nprintf 'hook diagnostic: ${name}\\n'\n`,
+      `#!${shell}\nprintf 'ran' > '${name}-ran'\nprintf 'hook stdout: ${name}\\n'\nprintf 'hook stderr: ${name}\\n' >&2\n`,
     );
     chmodSync(join(repo.cwd, "empty-hooks", name), 0o700);
   }
@@ -46,10 +48,12 @@ test("runs the configured pre-commit and commit-msg hooks", async (t) => {
   await commitCandidate("feat: run hooks", snapshot, {
     ...repo,
     temporaryDirectory: repo.cwd,
-    onOutputLine: (line) => output.push(line),
+    onOutput: (chunk) => output.push(chunk),
   });
-  assert.ok(output.length > 0);
-  assert.ok(output.every((line) => !line.includes("hook diagnostic:")));
+  const text = output.join("");
+  assert.match(text, /hook stdout: pre-commit\nhook stderr: pre-commit\n/);
+  assert.match(text, /hook stdout: commit-msg\nhook stderr: commit-msg\n/);
+  assert.ok(text.indexOf("hook stderr: commit-msg") < text.indexOf("feat: run hooks"));
   assert.equal(readFileSync(join(repo.cwd, "pre-commit-ran"), "utf8"), "ran");
   assert.equal(readFileSync(join(repo.cwd, "commit-msg-ran"), "utf8"), "ran");
 });
@@ -57,7 +61,10 @@ test("runs the configured pre-commit and commit-msg hooks", async (t) => {
 test("does not bypass a failing hook or reset the index", async (t) => {
   const repo = fixture(t);
   const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
-  repo.write("empty-hooks/commit-msg", `#!${shell}\nexit 1\n`);
+  repo.write(
+    "empty-hooks/commit-msg",
+    `#!${shell}\nprintf 'hook rejected the commit\\n' >&2\nexit 1\n`,
+  );
   chmodSync(join(repo.cwd, "empty-hooks/commit-msg"), 0o700);
   repo.write("file.txt", "staged\n");
   repo.git(["add", "file.txt"]);
@@ -68,19 +75,69 @@ test("does not bypass a failing hook or reset the index", async (t) => {
     commitCandidate("feat: invoke hooks", snapshot, {
       ...repo,
       temporaryDirectory: repo.cwd,
-      onOutputLine: (line) => output.push(line),
+      onOutput: (chunk) => output.push(chunk),
     }),
     CommitError,
   );
-  assert.deepEqual(output, []);
+  assert.match(output.join(""), /hook rejected the commit/);
+  assert.doesNotMatch(output.join(""), /\[main/);
   repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
   assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
+});
+
+test("shows a hook's partial stderr before it continues, without waiting for a newline", async (t) => {
+  const repo = fixture(t);
+  const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
+  repo.write(
+    "empty-hooks/pre-commit",
+    `#!${shell}
+printf 'Checking 日本語...' >&2
+attempt=0
+while [ ! -f output-seen ]; do
+  if [ "$attempt" -ge 50 ]; then
+    printf 'output was buffered\\n' >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+printf 'Passed\\n' >&2
+`,
+  );
+  chmodSync(join(repo.cwd, "empty-hooks/pre-commit"), 0o700);
+  repo.write("file.txt", "staged\n");
+  repo.git(["add", "file.txt"]);
+  const snapshot = await readStagedSnapshot(repo);
+  let output = "";
+  await commitCandidate("test: stream hook output", snapshot, {
+    ...repo,
+    temporaryDirectory: repo.cwd,
+    onOutput: (chunk) => {
+      output += chunk;
+      if (output.includes("Checking 日本語...")) repo.write("output-seen", "yes");
+    },
+  });
+  assert.match(output, /Checking 日本語\.\.\.Passed\n/);
+  assert.ok(output.indexOf("Passed") < output.indexOf("test: stream hook output"));
+  assert.equal(repo.git(["log", "-1", "--format=%s"]).trim(), "test: stream hook output");
+});
+
+test("commits with native terminal output when no output renderer is supplied", async (t) => {
+  const repo = fixture(t);
+  repo.write("file.txt", "staged\n");
+  repo.git(["add", "file.txt"]);
+  const snapshot = await readStagedSnapshot(repo);
+  await commitCandidate("test: native output", snapshot, { ...repo, temporaryDirectory: repo.cwd });
+  assert.equal(repo.git(["log", "-1", "--format=%s"]).trim(), "test: native output");
 });
 
 test("respects SSH signing and stops on signer failure without an unsigned retry", async (t) => {
   const repo = fixture(t);
   const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
-  repo.write("signer", `#!${shell}\nprintf 'attempt\\n' >> signer-attempts\nexit 1\n`);
+  repo.write(
+    "signer",
+    `#!${shell}\nprintf 'attempt\\n' >> signer-attempts\nprintf 'synthetic signer failed\\n' >&2\nexit 1\n`,
+  );
   chmodSync(join(repo.cwd, "signer"), 0o700);
   repo.write("signing.pub", "synthetic public key fixture\n");
   repo.git(["config", "commit.gpgsign", "true"]);
@@ -96,11 +153,12 @@ test("respects SSH signing and stops on signer failure without an unsigned retry
     commitCandidate("feat: require signing", snapshot, {
       ...repo,
       temporaryDirectory: repo.cwd,
-      onOutputLine: (line) => output.push(line),
+      onOutput: (chunk) => output.push(chunk),
     }),
     CommitError,
   );
-  assert.deepEqual(output, []);
+  assert.match(output.join(""), /synthetic signer failed/);
+  assert.doesNotMatch(output.join(""), /\[main/);
   assert.equal(readFileSync(join(repo.cwd, "signer-attempts"), "utf8"), "attempt\n");
   repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
   assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
