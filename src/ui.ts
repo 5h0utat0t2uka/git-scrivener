@@ -219,7 +219,11 @@ export function createUi({
             if (this.state === "submit" || this.state === "cancel") {
               const label =
                 this.state === "cancel" ? "Cancelled" : this.options[this.cursor]!.label;
-              return `${title}${wrapTextWithPrefix(output, styleText("dim", label), `${S_BAR}  `)}`;
+              return `${title}${wrapTextWithPrefix(
+                output,
+                styleText("dim", label),
+                `${styleText("gray", S_BAR)}  `,
+              )}`;
             }
             const prefix = `${styleText("cyan", S_BAR)}  `;
             const footer = formatInstructionFooter(SELECT_INSTRUCTIONS, true);
