@@ -73,6 +73,8 @@ Commits use the configured Git hooks and signing settings, including SSH signing
 
 Git's standard output and standard error, including hook results, are merged into one stream and displayed with a `│` guide. Partial lines are displayed immediately, and indentation is preserved. Input remains connected to the terminal, and signing programs can still use `/dev/tty`. Prompts written directly to `/dev/tty` are outside the captured stream and are not decorated. In the decorated mode, Git and hook output descriptors are pipes rather than TTYs; use `--plain` for hooks requiring terminal output or full-screen controls. Plain mode leaves all three descriptors connected directly to the terminal.
 
+For decorated output to a terminal, the commit process receives `PRE_COMMIT_COLOR=always` and `PREK_COLOR=always` when those settings are unset or `auto`, preserving colored hook results alongside the guide. Explicit settings such as `never` are kept. This automatic color adjustment is disabled by a nonempty `NO_COLOR`, `FORCE_COLOR=0`, or `TERM=dumb`, and is not applied in plain mode or to redirected output. See the [pre-commit color implementation](https://github.com/pre-commit/pre-commit/blob/main/pre_commit/color.py) and [prek color setting](https://prek.j178.dev/reference/environment-variables/#prek_color).
+
 The package declares the executable name `git-scrivener`, for invocation as `git scrivener` once installed on `PATH`.
 
 ## Nix package

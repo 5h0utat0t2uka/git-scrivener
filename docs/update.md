@@ -54,4 +54,7 @@ git add package.json pnpm-lock.yaml nix/package.nix
 git commit -m "chore: align pnpm with updated nixpkgs"
 git push
 gh pr merge <PR番号> --squash --delete-branch
+git switch main
+git pull --ff-only
+git fetch --prune origin
 ```

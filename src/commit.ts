@@ -18,11 +18,13 @@ export async function commitCandidate(
     env = process.env,
     temporaryDirectory = tmpdir(),
     onOutput,
+    outputIsTTY = process.stdout.isTTY === true,
   }: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     temporaryDirectory?: string;
     onOutput?: (chunk: string) => void;
+    outputIsTTY?: boolean;
   } = {},
 ): Promise<void> {
   const validated = validateCommitMessage(message).message;
@@ -33,6 +35,21 @@ export async function commitCandidate(
     await writeFile(file, `${validated}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
     const commitEnv = { ...env };
     delete commitEnv.OPENAI_API_KEY;
+    // The renderer's destination is a terminal, but the hook sees our output pipe.
+    // Restore automatic color for hook managers without changing explicit preferences.
+    if (
+      onOutput &&
+      outputIsTTY &&
+      env.TERM !== "dumb" &&
+      !env.NO_COLOR &&
+      env.FORCE_COLOR !== "0"
+    ) {
+      for (const variable of ["PRE_COMMIT_COLOR", "PREK_COLOR"]) {
+        if (commitEnv[variable] === undefined || commitEnv[variable] === "auto") {
+          commitEnv[variable] = "always";
+        }
+      }
+    }
     let shell: string | undefined;
     if (onOutput) {
       try {

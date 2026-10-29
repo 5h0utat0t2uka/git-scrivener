@@ -192,6 +192,19 @@ test("Git output continues the timeline without extra gaps and preserves indenta
   assert.equal(plain.text(), "");
 });
 
+test("commit output preserves hook colors and split escape sequences alongside the guide", (t) => {
+  const view = terminal(t);
+  const output = view.ui.commitOutput()!;
+  output.write("Checks...");
+  output.write("\x1b[");
+  output.write("42mPassed\x1b[m\n");
+  output.write("zizmor...\x1b[46mSkipped\x1b[m\n");
+  output.finish();
+  assert.ok(view.text().includes("Checks...\x1b[42mPassed\x1b[m\n"));
+  assert.ok(view.text().includes("zizmor...\x1b[46mSkipped\x1b[m\n"));
+  assert.equal(stripVTControlCharacters(view.text()), "│  Checks...Passed\n│  zizmor...Skipped\n");
+});
+
 test("commit output handles split CRLF, carriage returns, and partial final lines", (t) => {
   const view = terminal(t);
   const output = view.ui.commitOutput()!;

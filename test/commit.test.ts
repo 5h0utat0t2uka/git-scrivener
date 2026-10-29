@@ -85,6 +85,154 @@ test("does not bypass a failing hook or reset the index", async (t) => {
   assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
 });
 
+test("hook color preferences are scoped to the commit process and terminal output", async (t) => {
+  const cases: {
+    name: string;
+    env: NodeJS.ProcessEnv;
+    outputIsTTY: boolean;
+    capture: boolean;
+    expected: string;
+  }[] = [
+    {
+      name: "terminal defaults",
+      env: {},
+      outputIsTTY: true,
+      capture: true,
+      expected: "always/always",
+    },
+    {
+      name: "explicit auto",
+      env: { PRE_COMMIT_COLOR: "auto", PREK_COLOR: "auto" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "always/always",
+    },
+    {
+      name: "explicit preferences",
+      env: { PRE_COMMIT_COLOR: "never", PREK_COLOR: "always" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "never/always",
+    },
+    {
+      name: "independent preferences",
+      env: { PRE_COMMIT_COLOR: "always", PREK_COLOR: "never" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "always/never",
+    },
+    {
+      name: "NO_COLOR",
+      env: { NO_COLOR: "1" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "unset/unset",
+    },
+    {
+      name: "empty NO_COLOR",
+      env: { NO_COLOR: "" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "always/always",
+    },
+    {
+      name: "FORCE_COLOR=0",
+      env: { FORCE_COLOR: "0" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "unset/unset",
+    },
+    {
+      name: "dumb terminal",
+      env: { TERM: "dumb" },
+      outputIsTTY: true,
+      capture: true,
+      expected: "unset/unset",
+    },
+    {
+      name: "redirected output",
+      env: {},
+      outputIsTTY: false,
+      capture: true,
+      expected: "unset/unset",
+    },
+    {
+      name: "plain output",
+      env: {},
+      outputIsTTY: true,
+      capture: false,
+      expected: "unset/unset",
+    },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (t) => {
+      const repo = fixture(t);
+      for (const variable of ["PRE_COMMIT_COLOR", "PREK_COLOR", "NO_COLOR", "FORCE_COLOR"]) {
+        delete repo.env[variable];
+      }
+      repo.env.TERM = "xterm-256color";
+      Object.assign(repo.env, scenario.env);
+      const originalEnv = { ...repo.env };
+      const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
+      repo.write(
+        "empty-hooks/pre-commit",
+        `#!${shell}\nprintf '%s/%s' "\${PRE_COMMIT_COLOR-unset}" "\${PREK_COLOR-unset}" > hook-colors\n`,
+      );
+      chmodSync(join(repo.cwd, "empty-hooks/pre-commit"), 0o700);
+      repo.write("file.txt", "staged\n");
+      repo.git(["add", "file.txt"]);
+      const snapshot = await readStagedSnapshot(repo);
+      await commitCandidate("test: hook colors", snapshot, {
+        ...repo,
+        temporaryDirectory: repo.cwd,
+        outputIsTTY: scenario.outputIsTTY,
+        ...(scenario.capture ? { onOutput: () => {} } : {}),
+      });
+      assert.equal(readFileSync(join(repo.cwd, "hook-colors"), "utf8"), scenario.expected);
+      assert.deepEqual(repo.env, originalEnv, "do not change the caller's environment");
+    });
+  }
+});
+
+test("colored hook failures still stop the commit and preserve the index", async (t) => {
+  const repo = fixture(t);
+  const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
+  repo.env.PRE_COMMIT_COLOR = "auto";
+  repo.env.TERM = "xterm-256color";
+  delete repo.env.NO_COLOR;
+  delete repo.env.FORCE_COLOR;
+  repo.env.OPENAI_API_KEY = "synthetic-key-not-for-hooks";
+  repo.write(
+    "empty-hooks/pre-commit",
+    `#!${shell}
+[ -z "\${OPENAI_API_KEY+x}" ] || exit 2
+[ "$PRE_COMMIT_COLOR" = always ] || exit 3
+printf '\\033[41mFailed\\033[m\\n' >&2
+exit 1
+`,
+  );
+  chmodSync(join(repo.cwd, "empty-hooks/pre-commit"), 0o700);
+  repo.write("file.txt", "staged\n");
+  repo.git(["add", "file.txt"]);
+  const snapshot = await readStagedSnapshot(repo);
+  const index = repo.git(["ls-files", "--stage", "-z"]);
+  let output = "";
+  await assert.rejects(
+    commitCandidate("test: colored failure", snapshot, {
+      ...repo,
+      temporaryDirectory: repo.cwd,
+      outputIsTTY: true,
+      onOutput: (chunk) => {
+        output += chunk;
+      },
+    }),
+    CommitError,
+  );
+  assert.ok(output.includes("\x1b[41mFailed\x1b[m\n"));
+  repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
+  assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
+});
+
 test("shows a hook's partial stderr before it continues, without waiting for a newline", async (t) => {
   const repo = fixture(t);
   const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
