@@ -32,11 +32,9 @@ pnpm install --ignore-scripts
 
 4. 依存ハッシュを取得する
 `nix/package.nix` の `pnpmDeps` 内を、一時的に次へ変更します。
-
 ```nix
 hash = "";
 ```
-
 ```sh
 nix build --no-link --no-write-lock-file --print-build-logs '.#git-scrivener.pnpmDeps'
 ```
