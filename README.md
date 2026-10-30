@@ -20,7 +20,18 @@ git add <files>
 git scrivener
 ```
 
-Use `git scrivener --model <id>` to change the model, or `git scrivener --check` to inspect staged changes without an API request.
+The defaults are OpenAI, `gpt-6-luna`, and English commit messages. Use `--model <id>` to change the model, `--language ja` for Japanese messages, or `--check` to inspect staged changes without an API request.
+
+```sh
+# OpenAI with a Japanese commit message (requires OPENAI_API_KEY)
+git scrivener --language ja
+
+# Anthropic with an explicitly selected model (requires ANTHROPIC_API_KEY)
+git scrivener --provider anthropic --model <model-id>
+git scrivener --provider anthropic --model <model-id> --language ja
+```
+
+`--provider` accepts `openai` or `anthropic`; only the selected provider's API key is required. Anthropic requires an explicit `--model` supporting Messages and Structured Outputs. Provider, model, and language are retained during regeneration; failures never switch providers automatically. `--language` accepts `en` or `ja` and affects the description, body, breaking-change explanation, and natural-language footer values. Conventional Commit tokens remain in English, and code identifiers and paths are preserved. The CLI's menus and status messages remain in English. Language is a generation instruction, not a language-detection restriction on manually edited messages.
 
 The CLI generates and validates a Conventional Commit candidate from staged changes, then offers confirmation, editing, regeneration, and cancellation. Explicit confirmation runs `git commit --file` using the accepted message. Use `--check` for staged-diff inspection without an API request.
 
@@ -39,12 +50,15 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm test:bundle
 node dist/cli.js --help
 ```
 
-The Nix development shell supplies the standard `pkgs.nodejs` and `pkgs.pnpm` packages from the nixpkgs revision pinned in `flake.lock` (currently Node.js 24.21.0 and pnpm 12.9.0). When updating nixpkgs, check both versions, keep `packageManager` in sync with pnpm, and verify Node.js against `engines.node`. Oxlint and Oxfmt also come from Nix. Tests use Node's built-in test runner and create isolated Git repositories under `.test-tmp/`; they do not use your signing configuration or hooks.
+The Nix development shell supplies the standard `pkgs.nodejs` and `pkgs.pnpm` packages from the nixpkgs revision pinned in `flake.lock` (currently Node.js 24.21.0 and pnpm 12.9.0). When updating nixpkgs, check both versions against `devEngines.packageManager` and `engines.node`. Oxlint and Oxfmt also come from Nix. Tests use Node's built-in test runner and create isolated Git repositories under `.test-tmp/`; they do not use your signing configuration or hooks.
 
-Generation tests use the official SDK with an in-memory HTTP transport and synthetic credentials. They require Betterleaks from the development shell, but do not contact OpenAI or validate credentials against provider APIs.
+Generation tests use both official SDKs with in-memory HTTP transports and synthetic credentials. They require Betterleaks from the development shell, but do not contact either provider or validate credentials against provider APIs.
+
+`pnpm build` uses [tsdown](https://tsdown.dev/options/dependencies) to bundle the CLI and its JavaScript dependencies for Node.js 24 or newer. It preserves readable output without minification and writes dependency licenses to `dist/THIRD_PARTY_NOTICES.txt`. `pnpm typecheck` remains a separate required check. `pnpm test:bundle` tests the built CLI, including both providers, English/Japanese output, confirmation, cancellation, and regeneration using a test-only HTTP preload; it does not call real APIs.
 
 Inspect the currently staged changes during development:
 
@@ -55,7 +69,7 @@ pnpm dev --check --max-diff-bytes 524288
 
 The default limit is 1,048,576 bytes for the complete UTF-8 diff, including patch headers. This is a CLI size policy, not a model context-window guarantee. The patch is never silently truncated.
 
-To generate a candidate, provide `OPENAI_API_KEY` through your runtime environment, then run `pnpm dev`. Use `pnpm dev --model <id>` to select another model supporting Responses and Structured Outputs. The same byte limit applies to the JSON-encoded input, so escaping and regeneration context can cause a request to exceed the limit even when the raw diff fits.
+To generate a candidate, provide the selected provider's API key through your runtime environment, then run `pnpm dev` with the same provider, model, and language options as the installed CLI. OpenAI models must support Responses and Structured Outputs; Anthropic models must support Messages and Structured Outputs. The same byte limit applies to the JSON-encoded input, so escaping and regeneration context can cause a request to exceed the limit even when the raw diff fits.
 
 Generation requires an interactive terminal. A timeline displays staged file paths, a spinner during generation or regeneration, and the elapsed processing time. The duration includes the secret scan, API request, and candidate validation. Filenames containing terminal controls or non-UTF-8 bytes are escaped for display.
 
@@ -71,7 +85,7 @@ The editor comes from `git var GIT_EDITOR`, including configured arguments and q
 
 Immediately before committing or regenerating, the CLI checks that HEAD, its branch reference, and the index tree still match the generation snapshot. A mismatch ends the operation and requires a fresh invocation. This check is not an atomic lock against other Git processes; avoid changing the index or branch concurrently. Git hooks can themselves change the index or commit message.
 
-Commits use the configured Git hooks and signing settings, including SSH signing. Hook or signing failures stop the operation without an unsigned retry or an index reset. The API key is removed from the environment passed to the editor and commit process. Tests cover hook execution and simulated SSH signing failure; live OpenAI access and physical YubiKey signing still need an end-to-end check in the target environment.
+Commits use the configured Git hooks and signing settings, including SSH signing. Hook or signing failures stop the operation without an unsigned retry or an index reset. Both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are removed from the environment passed to the editor and commit process. Tests cover hook execution and simulated SSH signing failure; live provider access and physical YubiKey signing still need an end-to-end check in the target environment.
 
 Git's standard output and standard error, including hook results, are merged into one stream and displayed with a `│` guide. Partial lines are displayed immediately, and indentation is preserved. Input remains connected to the terminal, and signing programs can still use `/dev/tty`. Prompts written directly to `/dev/tty` are outside the captured stream and are not decorated. In the decorated mode, Git and hook output descriptors are pipes rather than TTYs; use `--plain` for hooks requiring terminal output or full-screen controls. Plain mode leaves all three descriptors connected directly to the terminal.
 
@@ -81,7 +95,7 @@ The package declares the executable name `git-scrivener`, for invocation as `git
 
 ## Nix package
 
-`nix/package.nix` defines the package, exported as `packages.<system>.git-scrivener` and `packages.<system>.default`. The build includes type checking, lint, the test suite, and installed CLI help/version checks.
+`nix/package.nix` defines the package, exported as `packages.<system>.git-scrivener` and `packages.<system>.default`. The build includes type checking, lint, the source test suite, and integration tests against the installed bundle.
 
 Build and inspect the package:
 
@@ -97,23 +111,26 @@ To use Git's external-command dispatch with the local build:
 PATH="$PWD/result/bin:$PATH" git scrivener --version
 ```
 
-The package uses the same pinned Node.js and pnpm as the development shell. `fetchPnpmDeps` downloads the lockfile dependencies; subsequent installation, compilation, and tests run offline. The build runs type checking, lint, and the test suite, then installs compiled JavaScript, package metadata, and production dependencies. Its launcher supplies Git and Betterleaks and keeps the user's environment available for the editor, SSH agent, signing program, and hooks.
+The package uses the same pinned Node.js and pnpm as the development shell. `fetchPnpmDeps` downloads the lockfile dependencies; subsequent installation, bundling, and tests run offline. Only the bundled JavaScript, third-party notices, and package metadata are installed, without `node_modules`. The installed bundle is tested again to verify that it works without separately installed JavaScript dependencies. Its launcher supplies Git and Betterleaks and keeps the user's environment available for the editor, SSH agent, signing program, and hooks.
 
 After updating pnpm or dependencies, regenerate `pnpm-lock.yaml` with the development shell's pnpm. Recalculate `pnpmDeps.hash` in `nix/package.nix` by setting it to an empty string and building `.#git-scrivener.pnpmDeps`; copy the reported `got: sha256-...` value into the hash, then build the complete package. Keep the workspace's dependency security policies enabled during updates.
 
 pnpm 12 records the pinned package manager and application dependencies in separate YAML documents within `pnpm-lock.yaml`. GitHub currently cannot detect dependencies from this format in its dependency graph: Dependabot version updates work, but alerts and security update PRs for those dependencies do not. See [GitHub's pnpm support notes](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories#pnpm).
 
-Build sources are limited to TypeScript source/tests and named build configuration files. The dependency fetcher receives only the package manifest, lockfile, and workspace configuration. API keys are never read during Nix evaluation or builds; provide them only at runtime. When building a local Git flake, new source files must be known to Git. Keep secrets untracked: the flake itself is copied to the Nix store before the package's source filter runs.
+Build sources are limited to TypeScript source/tests, named build configuration files, and supplemental dependency licenses. The dependency fetcher receives only the package manifest, lockfile, and workspace configuration. API keys are never read during Nix evaluation or builds; provide them only at runtime. When building a local Git flake, new source files must be known to Git. Keep secrets untracked: the flake itself is copied to the Nix store before the package's source filter runs.
+
+See [bundle measurements](docs/performance.md) for package size, runtime closure size, startup timing, and reproduction commands. If a dependency's npm archive omits its license, a version-specific upstream copy is kept under `licenses/`; verify it when updating that dependency.
 
 The later chezmoi integration can consume `inputs.git-scrivener.packages.${system}.default`. SOPS key management and runtime environment setup belong to that project.
 
 ## API generation policy
 
-- Uses the official OpenAI SDK, Responses API, and Zod Structured Outputs. The default model is `gpt-6-luna`; `--model` accepts an explicit model override.
-- Reads `OPENAI_API_KEY` at runtime, fixes the endpoint to `https://api.openai.com/v1`, disables SDK logging and HTTP redirects, and does not automatically retry requests.
-- Sets `store: false` and disables input truncation. `store: false` is not a guarantee of zero data retention; see [OpenAI's data controls](https://developers.openai.com/api/docs/guides/your-data).
+- OpenAI (default) uses the official OpenAI SDK and Responses API. Its default model is `gpt-6-luna`; `--model` accepts an explicit model override.
+- Anthropic uses the official `@anthropic-ai/sdk` and Messages API, with an explicit `--model`. Both providers use the same Zod candidate schema and CLI message validation. Anthropic stop reasons are checked before parsing JSON, so refusals and incomplete responses cannot be accepted as candidates.
+- Reads `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` at runtime. Endpoints are fixed to `https://api.openai.com/v1` and `https://api.anthropic.com`, respectively. SDK endpoint overrides, logging, HTTP redirects, and automatic retries are disabled. Anthropic's SDK telemetry is also disabled. No automatic provider fallback is performed.
+- OpenAI requests set `store: false` and disable input truncation. `store: false` is not a guarantee of zero data retention; see [OpenAI's data controls](https://developers.openai.com/api/docs/guides/your-data). Anthropic requests do not send this OpenAI-specific parameter; retention depends on Anthropic's model, feature, and account policies. The CLI does not guarantee zero retention for either provider; see [Anthropic's API and data retention policy](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention).
 - Keeps generation instructions separate from the untrusted diff and previous candidate. The JSON-encoded input has a separate byte-limit check, including the previous candidate when regenerating.
-- Scans all outgoing diff lines and any previous candidate with Betterleaks before making a request. The scanner uses its embedded rules in an isolated temporary directory, ignores target-repository overrides and inline allow comments, and performs no live credential validation. Scan errors block the request. The diff is passed through stdin, not written to the temporary directory.
+- Blocks either configured provider's API key if it occurs in the outgoing diff or previous candidate, including an unused provider's key. Scans all outgoing diff lines and any previous candidate with Betterleaks before making a request. The scanner uses its embedded rules in an isolated temporary directory, ignores target-repository overrides and inline allow comments, receives neither provider's environment variables, and performs no live credential validation. Scan errors block the request. The diff is passed through stdin, not written to the temporary directory.
 - Secret detection is heuristic and does not establish that arbitrary data is safe to share. API errors, refusals, malformed output, and incomplete responses are rejected without printing their raw contents.
 
 ## Message validation
@@ -140,6 +157,9 @@ Skills are copied into the generated, Git-ignored `.agents/skills/` directory. N
 - [Node.js TypeScript support](https://nodejs.org/docs/latest-v24.x/api/typescript.html)
 - [Node.js test runner](https://nodejs.org/docs/latest-v24.x/api/test.html)
 - [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [Anthropic TypeScript SDK structured output helpers](https://github.com/anthropics/anthropic-sdk-typescript/blob/main/helpers.md#structured-outputs)
+- [Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Anthropic stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 - [Nixpkgs pnpm packaging](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/javascript.section.md#pnpm-javascript-pnpm)
 - [pnpm installation options](https://pnpm.io/cli/install)
 - [Nix flakes](https://nix.dev/concepts/flakes)

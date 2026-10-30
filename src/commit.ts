@@ -35,6 +35,7 @@ export async function commitCandidate(
     await writeFile(file, `${validated}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
     const commitEnv = { ...env };
     delete commitEnv.OPENAI_API_KEY;
+    delete commitEnv.ANTHROPIC_API_KEY;
     // The renderer's destination is a terminal, but the hook sees our output pipe.
     // Restore automatic color for hook managers without changing explicit preferences.
     if (

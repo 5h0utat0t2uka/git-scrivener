@@ -13,9 +13,7 @@ export function fixture(t: TestContext, initialize = true) {
 
   // A pre-commit hook may inherit GIT_INDEX_FILE pointing at the user's index.
   const env: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) => !key.startsWith("GIT_") && key !== "OPENAI_API_KEY",
-    ),
+    Object.entries(process.env).filter(([key]) => !/^(?:GIT_|OPENAI_|ANTHROPIC_)/.test(key)),
   );
   env.GIT_CONFIG_NOSYSTEM = "1";
   env.GIT_CONFIG_GLOBAL = "/dev/null";

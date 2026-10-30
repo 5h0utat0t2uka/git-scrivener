@@ -2,7 +2,7 @@
   "name": "git-scrivener",
   "version": "0.1.0",
   "private": true,
-  "description": "Generate Conventional Commit messages from staged Git changes using OpenAI.",
+  "description": "Generate Conventional Commit messages from staged Git changes using OpenAI or Anthropic.",
   "type": "module",
   "bin": {
     "git-scrivener": "dist/cli.js"
@@ -12,12 +12,13 @@
   ],
   "scripts": {
     "dev": "node src/cli.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "lint": "oxlint src test",
-    "format": "oxfmt --write src test",
-    "format:check": "oxfmt --check src test"
+    "test:bundle": "SCRIVENER_TEST_CLI=./dist/cli.js node --test test/cli.test.ts test/bundle.integration.ts",
+    "lint": "oxlint src test tsdown.config.ts",
+    "format": "oxfmt --write src test tsdown.config.ts",
+    "format:check": "oxfmt --check src test tsdown.config.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -30,6 +31,7 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.2.0",
     "@clack/core": "1.5.1",
     "@clack/prompts": "1.8.1",
     "openai": "7.42.0",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "tsdown": "0.23.2",
     "typescript": "7.0.2"
   }
 }

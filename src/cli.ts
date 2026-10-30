@@ -7,7 +7,13 @@ import {
   readStagedSnapshot,
   RepositoryError,
 } from "./git.ts";
-import { DEFAULT_MODEL, generateCandidate, GenerationError } from "./generate.ts";
+import {
+  DEFAULT_MODEL,
+  generateCandidate,
+  GenerationError,
+  requireApiKey,
+  resolveGenerationSettings,
+} from "./generate.ts";
 import { assembleCommitMessage, MessageValidationError } from "./message.ts";
 import { SecretScanError } from "./secrets.ts";
 import { editMessage } from "./edit.ts";
@@ -26,7 +32,9 @@ async function main() {
         version: { type: "boolean", short: "v" },
         check: { type: "boolean" },
         plain: { type: "boolean" },
-        model: { type: "string", default: DEFAULT_MODEL },
+        provider: { type: "string", default: "openai" },
+        language: { type: "string", default: "en" },
+        model: { type: "string" },
         "max-diff-bytes": { type: "string", default: String(DEFAULT_MAX_DIFF_BYTES) },
       },
       allowPositionals: false,
@@ -39,17 +47,20 @@ async function main() {
   if (values.help) {
     console.log(`Usage: git scrivener [options]
 
-Generate an English Conventional Commit message from staged Git changes.
+Generate a Conventional Commit message from staged Git changes.
 
 Options:
   -h, --help                  Show this help
   -v, --version               Show the version
       --check                 Inspect the staged diff without sending it
       --plain                 Use static output and typed action shortcuts
-      --model <id>            OpenAI model (default: ${DEFAULT_MODEL})
+      --provider <name>       openai or anthropic (default: openai)
+      --language <code>       en or ja (default: en; commit message only)
+      --model <id>            Model (OpenAI default: ${DEFAULT_MODEL}; required for Anthropic)
       --max-diff-bytes <n>    Maximum diff size in bytes (default: ${DEFAULT_MAX_DIFF_BYTES})
 
-Generation requires OPENAI_API_KEY and sends the inspected diff to OpenAI.
+Generation sends the inspected diff to the selected provider.
+Set OPENAI_API_KEY for OpenAI or ANTHROPIC_API_KEY for Anthropic at runtime.
 Files are never staged automatically. A commit requires explicit confirmation.`);
     return;
   }
@@ -67,9 +78,13 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   if (limit === undefined || !/^\d+$/.test(limit)) {
     throw new RepositoryError("--max-diff-bytes must be a positive integer number of bytes.");
   }
+  const settings = resolveGenerationSettings({
+    provider: values.provider,
+    language: values.language,
+    ...(values.model === undefined ? {} : { model: values.model }),
+  });
   if (!values.check) {
-    if (!process.env.OPENAI_API_KEY?.trim())
-      throw new GenerationError("OPENAI_API_KEY is not set.");
+    requireApiKey(settings.provider);
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new InteractionError(
         "An interactive terminal is required. Use --check to inspect without generating.",
@@ -92,7 +107,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
     async () =>
       assembleCommitMessage(
         await generateCandidate(snapshot.diff, {
-          model: values.model,
+          ...settings,
           maxInputBytes: Number(limit),
         }),
       ),
@@ -107,7 +122,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
       return terminal.progress("Generating another candidate", "Candidate regenerated", async () =>
         assembleCommitMessage(
           await generateCandidate(snapshot.diff, {
-            model: values.model,
+            ...settings,
             previousCandidate,
             maxInputBytes: Number(limit),
           }),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { chmodSync, readdirSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import test from "node:test";
 import { assertNoSecrets } from "../src/secrets.ts";
 import { fixture } from "./fixture.ts";
@@ -41,6 +42,29 @@ test("accepts ordinary text and removes its temporary directory", async (t) => {
     temporaryDirectory: repo.cwd,
   });
   assert.deepEqual(readdirSync(repo.cwd), []);
+});
+
+test("does not pass either provider's API key to the scanner", async (t) => {
+  const repo = fixture(t);
+  const shell = repo.git(["var", "GIT_SHELL_PATH"]).trim();
+  repo.write(
+    "betterleaks",
+    `#!${shell}
+[ -z "\${OPENAI_API_KEY+x}" ] || exit 2
+[ -z "\${ANTHROPIC_API_KEY+x}" ] || exit 2
+cat > /dev/null
+`,
+  );
+  chmodSync(join(repo.cwd, "betterleaks"), 0o700);
+  const env = {
+    ...repo.env,
+    OPENAI_API_KEY: "test-openai-key",
+    ANTHROPIC_API_KEY: "test-anthropic-key",
+    PATH: `${repo.cwd}${delimiter}${repo.env.PATH ?? ""}`,
+  };
+  await assertNoSecrets("ordinary text\n", { env, temporaryDirectory: repo.cwd });
+  assert.equal(env.OPENAI_API_KEY, "test-openai-key");
+  assert.equal(env.ANTHROPIC_API_KEY, "test-anthropic-key");
 });
 
 test("uses embedded rules despite configuration overrides and inline allow comments", async (t) => {

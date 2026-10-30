@@ -21,6 +21,7 @@ export async function editMessage(
   const original = validateCommitMessage(message).message;
   const editorEnv = { ...env };
   delete editorEnv.OPENAI_API_KEY;
+  delete editorEnv.ANTHROPIC_API_KEY;
   let directory: string | undefined;
   try {
     const { stdout } = await executeFile("git", ["var", "GIT_EDITOR"], {

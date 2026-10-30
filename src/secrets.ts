@@ -19,7 +19,9 @@ export async function assertNoSecrets(
   try {
     // Ignore target-repository policy and never give the scanner our API credentials.
     const scanEnv = Object.fromEntries(
-      Object.entries(env).filter(([key]) => !/^(?:BETTERLEAKS_|GITLEAKS_|OPENAI_)/.test(key)),
+      Object.entries(env).filter(
+        ([key]) => !/^(?:BETTERLEAKS_|GITLEAKS_|OPENAI_|ANTHROPIC_)/.test(key),
+      ),
     );
     scanEnv.BETTERLEAKS_CONFIG_TOML = "[extend]\nuseDefault = true\n";
 

@@ -21,11 +21,12 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
     fileset = lib.fileset.unions [
       (lib.fileset.fileFilter (file: file.hasExt "ts") ../src)
       (lib.fileset.fileFilter (file: file.hasExt "ts") ../test)
+      ../licenses
       ../package.json
       ../pnpm-lock.yaml
       ../pnpm-workspace.yaml
       ../tsconfig.json
-      ../tsconfig.build.json
+      ../tsdown.config.ts
       ../.oxlintrc.json
     ];
   };
@@ -35,7 +36,7 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
     src = dependencySource;
     pnpm = pkgs.pnpm;
     fetcherVersion = 5;
-    hash = "sha256-p6V09A9LVycQwsTn8nPVOcvFobicX/Qesvrq+mK0FiY=";
+    hash = "sha256-e2WZ4DE2JqF02VMvvk+tEfgNRPO9COZ+gCfz5KBFBlg=";
   };
 
   nativeBuildInputs = [
@@ -70,14 +71,8 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
 
-    # Install only runtime dependencies into a fresh directory, using the same lockfile.
-    mkdir production
-    cp package.json pnpm-lock.yaml pnpm-workspace.yaml production/
-    pnpm --dir production install --offline --prod --frozen-lockfile --ignore-scripts \
-      --store-dir "$STORE_PATH" --package-import-method=copy
-
     mkdir -p "$out/lib/git-scrivener" "$out/bin"
-    cp -R dist package.json production/node_modules "$out/lib/git-scrivener/"
+    cp -R dist package.json "$out/lib/git-scrivener/"
     makeWrapper "${pkgs.nodejs}/bin/node" "$out/bin/git-scrivener" \
       --add-flags "$out/lib/git-scrivener/dist/cli.js" \
       --prefix PATH : "${
@@ -95,8 +90,10 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
     runHook preInstallCheck
     "$out/bin/git-scrivener" --help
     test "$("$out/bin/git-scrivener" --version)" = "${finalAttrs.version}"
-    test ! -e "$out/lib/git-scrivener/node_modules/typescript"
-    test ! -e "$out/lib/git-scrivener/node_modules/@types/node"
+    test ! -e "$out/lib/git-scrivener/node_modules"
+    test -s "$out/lib/git-scrivener/dist/THIRD_PARTY_NOTICES.txt"
+    SCRIVENER_TEST_CLI="$out/lib/git-scrivener/dist/cli.js" \
+      node --test test/cli.test.ts test/bundle.integration.ts
     runHook postInstallCheck
   '';
 

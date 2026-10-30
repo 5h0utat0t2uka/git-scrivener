@@ -24,6 +24,7 @@ test("resolves Git's editor with quoted arguments and uses private temporary fil
     assert.equal(statSync(file).mode & 0o777, 0o600);
     assert.equal(statSync(dirname(file)).mode & 0o777, 0o700);
     assert.equal(process.env.OPENAI_API_KEY, undefined);
+    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
     writeFileSync(file, 'fix(cli): accept edited text\\n');
   `,
   );
@@ -36,7 +37,7 @@ test("resolves Git's editor with quoted arguments and uses private temporary fil
   mkdirSync(temporaryDirectory);
   const edited = await editMessage("feat: original candidate", {
     cwd: repo.cwd,
-    env: { ...repo.env, OPENAI_API_KEY: "test-api-key" },
+    env: { ...repo.env, OPENAI_API_KEY: "test-api-key", ANTHROPIC_API_KEY: "test-anthropic-key" },
     temporaryDirectory,
   });
   assert.equal(edited, "fix(cli): accept edited text");

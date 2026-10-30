@@ -202,10 +202,12 @@ test("colored hook failures still stop the commit and preserve the index", async
   delete repo.env.NO_COLOR;
   delete repo.env.FORCE_COLOR;
   repo.env.OPENAI_API_KEY = "synthetic-key-not-for-hooks";
+  repo.env.ANTHROPIC_API_KEY = "synthetic-anthropic-key-not-for-hooks";
   repo.write(
     "empty-hooks/pre-commit",
     `#!${shell}
 [ -z "\${OPENAI_API_KEY+x}" ] || exit 2
+[ -z "\${ANTHROPIC_API_KEY+x}" ] || exit 2
 [ "$PRE_COMMIT_COLOR" = always ] || exit 3
 printf '\\033[41mFailed\\033[m\\n' >&2
 exit 1
