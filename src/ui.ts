@@ -1,13 +1,16 @@
 import { isUtf8 } from "node:buffer";
 import { stdin, stdout, stderr } from "node:process";
-import { createInterface } from "node:readline";
+import { createInterface, emitKeypressEvents } from "node:readline";
+import type { Key } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import type { ReadStream } from "node:tty";
 import { styleText } from "node:util";
-import { SelectPrompt, wrapTextWithPrefix } from "@clack/core";
+import { getColumns, SelectPrompt, wrapTextWithPrefix } from "@clack/core";
 import {
   S_BAR,
   S_RADIO_ACTIVE,
   S_RADIO_INACTIVE,
+  S_STEP_ERROR,
   SELECT_INSTRUCTIONS,
   cancel,
   formatInstructionFooter,
@@ -16,7 +19,6 @@ import {
   limitOptions,
   log,
   outro,
-  spinner,
   unicodeOr,
   updateSettings,
 } from "@clack/prompts";
@@ -63,6 +65,88 @@ export function createUi({
         symbol: styleText("green", stepSymbol),
         spacing,
       });
+    }
+  }
+
+  function startSpinner(label: string): () => void {
+    const frames = [...unicodeOr("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "|/-\\")];
+    const terminalInput = input as ReadStream;
+    const rawInput = terminalInput.isTTY && typeof terminalInput.setRawMode === "function";
+    const wasRaw = terminalInput.isRaw ?? false;
+    const wasFlowing = input.readableFlowing === true;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let frame = 0;
+    let active = true;
+    const symbol = () => styleText("magenta", frames[frame]!);
+
+    function renderLabel() {
+      // Labels are fixed English strings. Keep them on one row, leaving the last
+      // column unused so the cursor stays on the spinner even in narrow terminals.
+      const available = Math.max(0, getColumns(output) - 4);
+      const text =
+        label.length <= available
+          ? label
+          : available > 0
+            ? `${label.slice(0, available - 1)}${unicodeOr("…", ".")}`
+            : "";
+      output.write(`\r\x1b[0J${symbol()}${text ? `  ${text}` : ""}\r`);
+    }
+
+    function stop() {
+      if (!active) return;
+      active = false;
+      clearInterval(timer);
+      output.off("resize", renderLabel);
+      input.off("keypress", keypress);
+      input.off("end", interrupt);
+      input.off("close", interrupt);
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", terminate);
+      process.off("exit", stop);
+      if (rawInput) terminalInput.setRawMode(wasRaw);
+      if (!wasFlowing) input.pause();
+      output.write("\r\x1b[0J\x1b[?25h");
+    }
+
+    function interrupt() {
+      stop();
+      cancel("Cancelled. No commit was created.", options);
+      // Stop the pending task as well as the animation.
+      process.exit(130);
+    }
+
+    function terminate() {
+      stop();
+      cancel("Cancelled. No commit was created.", options);
+      process.exit(143);
+    }
+
+    function keypress(_text: string | undefined, key: Key) {
+      if (["\x03", "\x04", "\x1b"].includes(key.sequence ?? "")) interrupt();
+    }
+
+    try {
+      process.once("exit", stop);
+      process.once("SIGINT", interrupt);
+      process.once("SIGTERM", terminate);
+      input.once("end", interrupt);
+      input.once("close", interrupt);
+      emitKeypressEvents(input);
+      input.on("keypress", keypress);
+      if (rawInput) terminalInput.setRawMode(true);
+      input.resume();
+      output.write(`${styleText("gray", S_BAR)}\n\x1b[?25l`);
+      renderLabel();
+      output.on("resize", renderLabel);
+      timer = setInterval(() => {
+        frame = (frame + 1) % frames.length;
+        // Only replace the first cell; never erase or reprint the label per frame.
+        output.write(`${symbol()}\r`);
+      }, 80);
+      return stop;
+    } catch (error) {
+      stop();
+      throw error;
     }
   }
 
@@ -132,34 +216,23 @@ export function createUi({
     },
     async progress<T>(label: string, completed: string, task: () => Promise<T>): Promise<T> {
       const started = performance.now();
-      const indicator = plain
-        ? undefined
-        : spinner({
-            ...options,
-            frames: [..."⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"],
-            delay: 80,
-            cancelMessage: "Cancelled. No commit was created.",
-            errorMessage: "Generation stopped.",
-            // A signal must also stop the task, not just its animation.
-            onCancel: () => process.exit(130),
-          });
-      if (indicator) indicator.start(label);
-      else output.write(`${label}...\n`);
+      const stop = plain ? undefined : startSpinner(label);
+      if (plain) output.write(`${label}...\n`);
       try {
         const result = await task();
         const message = `${completed} in ${elapsed(started)}`;
-        // clear() stops the animation and restores the terminal without a fixed success symbol.
-        // The spinner already printed the guide line, so do not add another one here.
-        indicator?.clear();
+        stop?.();
         step(message, 0);
         return result;
       } catch (error) {
         const message = `Generation failed after ${elapsed(started)}`;
-        if (indicator) indicator.error(message);
-        else output.write(`${message}\n`);
+        stop?.();
+        if (plain) output.write(`${message}\n`);
+        else
+          log.message(message, { ...options, symbol: styleText("red", S_STEP_ERROR), spacing: 0 });
         throw error;
       } finally {
-        indicator?.clear();
+        stop?.();
       }
     },
     async prompt(): Promise<string | null> {

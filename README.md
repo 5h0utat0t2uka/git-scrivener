@@ -59,6 +59,8 @@ To generate a candidate, provide `OPENAI_API_KEY` through your runtime environme
 
 Generation requires an interactive terminal. A timeline displays staged file paths, a spinner during generation or regeneration, and the elapsed processing time. The duration includes the secret scan, API request, and candidate validation. Filenames containing terminal controls or non-UTF-8 bytes are escaped for display.
 
+While waiting, only the spinner symbol is updated; its label stays visible without repeated erasing. The label is redrawn when the terminal is resized and shortened with an ellipsis if needed to fit on one row. Completion and failure messages still include elapsed time. Cancellation restores the cursor and terminal input before exiting.
+
 Timeline steps and review questions use `○`. This marker is defined in `src/ui.ts`; the selection menu uses Clack Core's public render API while Clack handles keyboard input and terminal restoration.
 
 Use the up/down arrows to choose **Confirm**, **Edit**, **Regenerate**, or **Cancel**, then press Enter. Confirm is initially selected each time the menu opens, so pressing Enter accepts the displayed candidate and starts the commit. Ctrl-C, Ctrl-D, Escape, or EOF at the selection menu cancel. Saving an edit or regenerating returns to this menu and still requires pressing Enter to confirm. Failed edits and failed regeneration keep the previous candidate visible for an explicit decision. The menu restores normal terminal input before launching the editor or Git; hooks and signing prompts run without a spinner.

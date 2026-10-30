@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { PassThrough, Writable } from "node:stream";
 import { setTimeout } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
@@ -8,25 +9,35 @@ import { createUi } from "../src/ui.ts";
 
 function terminal(t: TestContext, plain = false) {
   let text = "";
+  const chunks: string[] = [];
   const modes: boolean[] = [];
   const input = Object.assign(new PassThrough(), {
     isTTY: true,
+    isRaw: false,
     setRawMode(enabled: boolean) {
+      this.isRaw = enabled;
       modes.push(enabled);
     },
   });
-  const output = new Writable({
-    write(chunk, _encoding, callback) {
-      text += chunk.toString();
-      callback();
-    },
-  });
+  const output = Object.assign(
+    new Writable({
+      write(chunk, _encoding, callback) {
+        const value = chunk.toString();
+        chunks.push(value);
+        text += value;
+        callback();
+      },
+    }),
+    { columns: 80 },
+  );
   t.after(() => {
     input.destroy();
     output.destroy();
   });
   return {
     input,
+    output,
+    chunks,
     modes,
     text: () => text,
     ui: createUi({ plain, input, output, errorOutput: output }),
@@ -132,7 +143,7 @@ test("timeline markers decorate steps without changing file names or candidate t
     text,
     /│\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
   );
-  assert.match(text, /│\n○  Candidate regenerated in \d+\.\ds\n/);
+  assert.match(text, /○  Candidate regenerated in \d+\.\ds\n/);
   assert.match(text, /│\n│  docs: describe ◇ and ❯ symbols\n│\n│  Keep their literal contents\.\n/);
   assert.match(text, /│\n○  Committing with Git\n└  Cancelled\. No commit was created\.\n/);
 });
@@ -155,10 +166,117 @@ test("progress shows elapsed time and releases its signal handlers on success an
     if (!fails) assert.match(text, /○  Changes analyzed in \d+\.\ds/);
     assert.doesNotMatch(text, /[◇❯]/);
     assert.doesNotMatch(text, /PRIVATE_ERROR_BODY/);
+    assert.equal(view.input.isRaw, false);
+    assert.equal(view.input.isPaused(), true);
+    assert.equal(view.input.listenerCount("keypress"), 0);
+    assert.equal(view.output.listenerCount("resize"), 0);
+    assert.ok(view.text().includes("\x1b[?25h"));
     assert.deepEqual(
       signals.map((signal) => process.listenerCount(signal)),
       listeners,
     );
+  }
+});
+
+test("spinner frames leave the label visible and stop writing after completion", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const task = Promise.withResolvers<string>();
+  let result: Promise<string>;
+  t.after(async () => {
+    task.resolve("candidate");
+    await result;
+  });
+  const view = terminal(t);
+  result = view.ui.progress("Analyzing staged changes", "Changes analyzed", () => task.promise);
+  const initial = view.chunks.length;
+  t.mock.timers.tick(240);
+  const updates = view.chunks.slice(initial).map(stripVTControlCharacters);
+  assert.equal(updates.length, 3);
+  for (const update of updates) {
+    assert.match(update, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\r$/u);
+  }
+  assert.equal(view.text().split("Analyzing staged changes").length - 1, 1);
+  for (const chunk of view.chunks.slice(initial)) {
+    assert.equal(chunk.includes("\x1b[0J"), false, "do not erase the label between frames");
+  }
+  task.resolve("candidate");
+  assert.equal(await result, "candidate");
+  const finished = view.text();
+  t.mock.timers.tick(240);
+  assert.equal(view.text(), finished);
+});
+
+test("spinner redraws the label only on resize and keeps it within one terminal row", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const task = Promise.withResolvers<void>();
+  let result: Promise<void>;
+  t.after(async () => {
+    task.resolve();
+    await result;
+  });
+  const view = terminal(t);
+  result = view.ui.progress("Analyzing staged changes", "Changes analyzed", () => task.promise);
+  for (const columns of [16, 4, 1, 80]) {
+    view.output.columns = columns;
+    view.output.emit("resize");
+    const label = stripVTControlCharacters(view.chunks.at(-1)!).replaceAll("\r", "");
+    assert.ok([...label].length <= Math.max(1, columns - 1));
+    assert.equal(label.includes("\n"), false);
+    if (columns === 16) assert.ok(label.endsWith("…"));
+    if (columns === 80) assert.ok(label.endsWith("Analyzing staged changes"));
+    const beforeTick = view.chunks.length;
+    t.mock.timers.tick(80);
+    assert.equal(view.chunks.length, beforeTick + 1);
+    assert.match(stripVTControlCharacters(view.chunks.at(-1)!), /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\r$/u);
+  }
+  task.resolve();
+  await result;
+});
+
+test("spinner cancellation stops the task and restores terminal state", { timeout: 15_000 }, () => {
+  for (const [action, expectedCode] of [
+    ['input.write("\\x03")', 130],
+    ['input.write("\\x04")', 130],
+    ['input.write("\\x1b")', 130],
+    ["input.end()", 130],
+    ['process.kill(process.pid, "SIGINT")', 130],
+    ['process.kill(process.pid, "SIGTERM")', 143],
+  ] as const) {
+    const source = `
+import { PassThrough, Writable } from "node:stream";
+import { createUi } from ${JSON.stringify(new URL("../src/ui.ts", import.meta.url).href)};
+const input = Object.assign(new PassThrough(), {
+  isTTY: true,
+  isRaw: false,
+  setRawMode(value) { this.isRaw = value; },
+});
+const output = Object.assign(new Writable({
+  write(chunk, encoding, callback) { process.stdout.write(chunk); callback(); },
+}), { columns: 80 });
+process.once("exit", () => {
+  process.stdout.write("\\nCLEANUP:" + JSON.stringify({
+    raw: input.isRaw,
+    keys: input.listenerCount("keypress"),
+    resize: output.listenerCount("resize"),
+    paused: input.isPaused(),
+  }) + "\\n");
+});
+void createUi({ plain: false, input, output }).progress(
+  "Analyzing staged changes", "Changes analyzed", () => new Promise(() => {}),
+);
+setImmediate(() => { ${action}; });
+`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+      encoding: "utf8",
+      env: { ...process.env, OPENAI_API_KEY: "" },
+      timeout: 2_000,
+    });
+    assert.ifError(child.error);
+    assert.equal(child.status, expectedCode, `${action}: ${child.stderr}`);
+    assert.match(child.stdout, /Cancelled\. No commit was created\./);
+    assert.ok(child.stdout.includes("\x1b[?25h"));
+    assert.ok(child.stdout.includes('CLEANUP:{"raw":false,"keys":0,"resize":0,"paused":true}'));
+    assert.doesNotMatch(child.stdout, /Changes analyzed in/);
   }
 });
 
