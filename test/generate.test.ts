@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_MODEL,
   generateCandidate,
   GenerationError,
@@ -95,18 +96,27 @@ test("uses Responses, strict structured output, a fixed endpoint, and separate i
   assert.match(body.instructions, /candidate in English/);
 });
 
-test("validates provider, language, and model without choosing an implicit Anthropic model", () => {
+test("validates settings and selects each provider's default model", () => {
   assert.deepEqual(resolveGenerationSettings(), {
     provider: "openai",
     language: "en",
     model: DEFAULT_MODEL,
   });
+  assert.deepEqual(resolveGenerationSettings({ provider: "anthropic" }), {
+    provider: "anthropic",
+    language: "en",
+    model: DEFAULT_ANTHROPIC_MODEL,
+  });
+  assert.equal(DEFAULT_ANTHROPIC_MODEL, "claude-haiku-5-5");
+  assert.equal(
+    resolveGenerationSettings({ provider: "anthropic", model: "custom-model" }).model,
+    "custom-model",
+  );
   for (const options of [
     { provider: "PRIVATE_INPUT" },
     { language: "PRIVATE_INPUT" },
     { model: " " },
     { model: " PRIVATE_INPUT " },
-    { provider: "anthropic" },
   ]) {
     assert.throws(
       () => resolveGenerationSettings(options),
@@ -117,6 +127,34 @@ test("validates provider, language, and model without choosing an implicit Anthr
       },
     );
   }
+});
+
+test("Anthropic defaults to Haiku 5.5 and selects text after a thinking block", async (t) => {
+  const repo = fixture(t, false);
+  const payload = anthropicResponse();
+  const mock = transport({
+    ...payload,
+    model: DEFAULT_ANTHROPIC_MODEL,
+    content: [
+      { type: "thinking", thinking: "PRIVATE_THINKING_DATA", signature: "test-signature" },
+      ...payload.content,
+    ],
+  });
+  assert.deepEqual(
+    await generateCandidate(diff, {
+      provider: "anthropic",
+      env: { ...repo.env, ANTHROPIC_API_KEY: credentials.ANTHROPIC_API_KEY },
+      fetch: mock.fetch,
+      temporaryDirectory: repo.cwd,
+    }),
+    candidate,
+  );
+  const body = JSON.parse(await mock.requests[0]!.text());
+  assert.equal(body.model, "claude-haiku-5-5");
+  assert.equal(body.output_config.format.type, "json_schema");
+  assert.equal(body.temperature, undefined);
+  assert.equal(body.top_p, undefined);
+  assert.equal(body.top_k, undefined);
 });
 
 test("Anthropic uses Messages, a fixed endpoint, and the same structured candidate with its own key", async (t) => {

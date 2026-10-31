@@ -8,6 +8,7 @@ import {
   RepositoryError,
 } from "./git.ts";
 import {
+  DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_MODEL,
   generateCandidate,
   GenerationError,
@@ -56,7 +57,8 @@ Options:
       --plain                 Use static output and typed action shortcuts
       --provider <name>       openai or anthropic (default: openai)
       --language <code>       en or ja (default: en; commit message only)
-      --model <id>            Model (OpenAI default: ${DEFAULT_MODEL}; required for Anthropic)
+      --model <id>            Model override
+                              Defaults: OpenAI=${DEFAULT_MODEL}; Anthropic=${DEFAULT_ANTHROPIC_MODEL}
       --max-diff-bytes <n>    Maximum diff size in bytes (default: ${DEFAULT_MAX_DIFF_BYTES})
 
 Generation sends the inspected diff to the selected provider.

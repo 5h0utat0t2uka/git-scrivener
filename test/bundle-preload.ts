@@ -13,7 +13,7 @@ globalThis.fetch = async (url, init) => {
       request.url === "https://api.anthropic.com/v1/messages",
   );
   assert.equal(request.method, "POST");
-  const body = (await request.json()) as { instructions?: string; system?: string };
+  const body = (await request.json()) as { model: string; instructions?: string; system?: string };
   requests.push({ url: request.url, body });
   writeFileSync("requests.json", JSON.stringify(requests));
   const japanese = (body.instructions ?? body.system ?? "").includes("candidate in Japanese");
@@ -31,8 +31,11 @@ globalThis.fetch = async (url, init) => {
       id: "msg_test",
       type: "message",
       role: "assistant",
-      model: "claude-test-model",
-      content: [{ type: "text", text }],
+      model: body.model,
+      content: [
+        { type: "thinking", thinking: "PRIVATE_THINKING_DATA", signature: "test-signature" },
+        { type: "text", text },
+      ],
       stop_reason: "end_turn",
       stop_sequence: null,
       usage: { input_tokens: 10, output_tokens: 10 },

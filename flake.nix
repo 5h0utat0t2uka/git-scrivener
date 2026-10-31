@@ -5,6 +5,11 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     git-hooks.url = "github:cachix/git-hooks.nix";
+    # Evaluate the exported module against Home Manager in the flake checks.
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     agent-skills = {
       url = "github:Kyure-A/agent-skills-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -13,13 +18,21 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       flake-utils,
       git-hooks,
+      home-manager,
       agent-skills,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    {
+      homeManagerModules = rec {
+        git-scrivener = import ./nix/home-manager.nix { inherit self; };
+        default = git-scrivener;
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
@@ -59,6 +72,11 @@
         checks = {
           pre-commit = preCommit;
           package = scrivener;
+          home-manager = import ./nix/tests/home-manager.nix {
+            inherit pkgs home-manager;
+            module = self.homeManagerModules.default;
+            package = scrivener;
+          };
         };
         packages = {
           default = scrivener;

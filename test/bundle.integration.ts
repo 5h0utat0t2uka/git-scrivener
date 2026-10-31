@@ -31,17 +31,7 @@ for (const provider of ["openai", "anthropic"] as const) {
         const index = repo.git(["ls-files", "--stage", "-z"]);
         const result = spawnSync(
           process.execPath,
-          [
-            "--import",
-            preload,
-            cli,
-            "--plain",
-            "--provider",
-            provider,
-            "--language",
-            language,
-            ...(provider === "anthropic" ? ["--model", "claude-test-model"] : []),
-          ],
+          ["--import", preload, cli, "--plain", "--provider", provider, "--language", language],
           {
             cwd: repo.cwd,
             env: {
@@ -63,12 +53,17 @@ for (const provider of ["openai", "anthropic"] as const) {
         const requests = JSON.parse(readFileSync(join(repo.cwd, "requests.json"), "utf8")) as {
           url: string;
           body: {
+            model: string;
             input?: { content: string }[];
             messages?: { content: string }[];
           };
         }[];
         assert.equal(requests.length, action === "r" ? 2 : 1);
         for (const request of requests) {
+          assert.equal(
+            request.body.model,
+            provider === "openai" ? "gpt-6-luna" : "claude-haiku-5-5",
+          );
           assert.equal(
             request.url,
             provider === "openai"

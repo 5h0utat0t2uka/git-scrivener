@@ -7,6 +7,7 @@ import { DEFAULT_MAX_DIFF_BYTES } from "./git.ts";
 import { assertNoSecrets } from "./secrets.ts";
 
 export const DEFAULT_MODEL = "gpt-6-luna";
+export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5";
 
 export const CommitCandidate = z.strictObject({
   type: z.string(),
@@ -49,10 +50,7 @@ export function resolveGenerationSettings({
     throw new GenerationError("--language must be en or ja.");
   }
   if (model === undefined) {
-    if (provider === "anthropic") {
-      throw new GenerationError("--model is required when using Anthropic.");
-    }
-    model = DEFAULT_MODEL;
+    model = provider === "anthropic" ? DEFAULT_ANTHROPIC_MODEL : DEFAULT_MODEL;
   }
   if (!model.trim() || model !== model.trim()) {
     throw new GenerationError(

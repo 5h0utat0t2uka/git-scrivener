@@ -28,12 +28,12 @@ The defaults are OpenAI, `gpt-6-luna`, and English commit messages. Use `--model
 # OpenAI with a Japanese commit message (requires OPENAI_API_KEY)
 git scrivener --language ja
 
-# Anthropic with an explicitly selected model (requires ANTHROPIC_API_KEY)
-git scrivener --provider anthropic --model <model-id>
-git scrivener --provider anthropic --model <model-id> --language ja
+# Anthropic with Haiku 5.5 (requires ANTHROPIC_API_KEY)
+git scrivener --provider anthropic
+git scrivener --provider anthropic --language ja
 ```
 
-`--provider` accepts `openai` or `anthropic`; only the selected provider's API key is required. Anthropic requires an explicit `--model` supporting Messages and Structured Outputs. Provider, model, and language are retained during regeneration; failures never switch providers automatically. `--language` accepts `en` or `ja` and affects the description, body, breaking-change explanation, and natural-language footer values. Conventional Commit tokens remain in English, and code identifiers and paths are preserved. The CLI's menus and status messages remain in English. Language is a generation instruction, not a language-detection restriction on manually edited messages.
+`--provider` accepts `openai` or `anthropic`; only the selected provider's API key is required. The default models are `gpt-6-luna` for OpenAI and `claude-haiku-5-5` for Anthropic. Override either with `--model`; the model must support the provider's API and Structured Outputs. Provider, model, and language are retained during regeneration; failures never switch providers automatically. `--language` accepts `en` or `ja` and affects the description, body, breaking-change explanation, and natural-language footer values. Conventional Commit tokens remain in English, and code identifiers and paths are preserved. The CLI's menus and status messages remain in English. Language is a generation instruction, not a language-detection restriction on manually edited messages.
 
 The CLI generates and validates a Conventional Commit candidate from staged changes, then offers confirmation, editing, regeneration, and cancellation. Explicit confirmation runs `git commit --file` using the accepted message. Use `--check` for staged-diff inspection without an API request.
 
@@ -123,12 +123,27 @@ Build sources are limited to TypeScript source/tests, named build configuration 
 
 See [bundle measurements](docs/performance.md) for package size, runtime closure size, startup timing, and reproduction commands. If a dependency's npm archive omits its license, a version-specific upstream copy is kept under `licenses/`; verify it when updating that dependency.
 
-The later chezmoi integration can consume `inputs.git-scrivener.packages.${system}.default`. SOPS key management and runtime environment setup belong to that project.
+Home Manager users can import `inputs.git-scrivener.homeManagerModules.default` and configure the CLI through `programs.git-scrivener`:
+
+```nix
+{
+  imports = [ inputs.git-scrivener.homeManagerModules.default ];
+
+  programs.git-scrivener = {
+    enable = true;
+    provider = "openai";
+    language = "en";
+    model = "gpt-6-luna";
+  };
+}
+```
+
+This belongs in a Home Manager module with access to `inputs`. API keys are still provided at runtime. See [Home Manager setup](docs/home-manager.md) for defaults, CLI overrides, and integration with an existing SOPS key loader.
 
 ## API generation policy
 
 - OpenAI (default) uses the official OpenAI SDK and Responses API. Its default model is `gpt-6-luna`; `--model` accepts an explicit model override.
-- Anthropic uses the official `@anthropic-ai/sdk` and Messages API, with an explicit `--model`. Both providers use the same Zod candidate schema and CLI message validation. Anthropic stop reasons are checked before parsing JSON, so refusals and incomplete responses cannot be accepted as candidates.
+- Anthropic uses the official `@anthropic-ai/sdk` and Messages API, defaulting to `claude-haiku-5-5`. `--model` accepts an explicit override. Both providers use the same Zod candidate schema and CLI message validation. Anthropic stop reasons are checked before parsing JSON, so refusals and incomplete responses cannot be accepted as candidates. Text blocks are selected by type so adaptive thinking blocks do not become part of the commit message. Thinking tokens share the existing 4,096-token output budget; exhausting it stops generation without accepting a partial message. See the [Haiku 5.5 migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide).
 - Reads `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` at runtime. Endpoints are fixed to `https://api.openai.com/v1` and `https://api.anthropic.com`, respectively. SDK endpoint overrides, logging, HTTP redirects, and automatic retries are disabled. Anthropic's SDK telemetry is also disabled. No automatic provider fallback is performed.
 - OpenAI requests set `store: false` and disable input truncation. `store: false` is not a guarantee of zero data retention; see [OpenAI's data controls](https://developers.openai.com/api/docs/guides/your-data). Anthropic requests do not send this OpenAI-specific parameter; retention depends on Anthropic's model, feature, and account policies. The CLI does not guarantee zero retention for either provider; see [Anthropic's API and data retention policy](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention).
 - Keeps generation instructions separate from the untrusted diff and previous candidate. The JSON-encoded input has a separate byte-limit check, including the previous candidate when regenerating.

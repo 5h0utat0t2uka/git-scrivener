@@ -19,6 +19,7 @@ test("help works outside Git without an API key", (t) => {
   assert.match(result.stdout, /--language/);
   assert.match(result.stdout, /--plain/);
   assert.match(result.stdout, /ANTHROPIC_API_KEY/);
+  assert.match(result.stdout, /claude-haiku-5-5/);
 });
 
 test("version works outside Git without an API key", (t) => {
@@ -35,7 +36,6 @@ test("rejects invalid arguments without echoing their contents", (t) => {
     ["--unexpected=PRIVATE_INPUT"],
     ["--provider", "PRIVATE_INPUT"],
     ["--language", "PRIVATE_INPUT"],
-    ["--provider", "anthropic"],
     ["--model", " PRIVATE_INPUT "],
     ["--max-diff-bytes", "0"],
     ["--max-diff-bytes", "1.5"],
@@ -72,16 +72,7 @@ test("rejects noninteractive generation before contacting the API", (t) => {
 
 test("Anthropic requires only its selected key and still requires an interactive terminal in plain mode", (t) => {
   const repo = fixture(t, false);
-  const args = [
-    cli,
-    "--provider",
-    "anthropic",
-    "--model",
-    "claude-test-model",
-    "--language",
-    "ja",
-    "--plain",
-  ];
+  const args = [cli, "--provider", "anthropic", "--language", "ja", "--plain"];
   for (const scenario of [
     { env: { OPENAI_API_KEY: "unused-test-key" }, error: /ANTHROPIC_API_KEY is not set/ },
     { env: { ANTHROPIC_API_KEY: "test-api-key" }, error: /interactive terminal is required/ },
