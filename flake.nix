@@ -41,9 +41,13 @@
             (final: prev: {
               # Semgrep 1.180.0 requires the MCP v1 API (FastMCP).
               # https://github.com/semgrep/semgrep/blob/v1.180.0/cli/pyproject.toml
-              semgrep = prev.semgrep.override {
-                mcp = final.python3Packages.mcp_1;
-              };
+              semgrep =
+                if prev.semgrep.version == "1.180.0" then
+                  prev.semgrep.override {
+                    mcp = final.python3Packages.mcp_1;
+                  }
+                else
+                  prev.semgrep;
             })
           ];
         };
