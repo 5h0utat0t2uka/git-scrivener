@@ -14,7 +14,6 @@ import {
   SELECT_INSTRUCTIONS,
   cancel,
   formatInstructionFooter,
-  intro,
   isCancel,
   limitOptions,
   log,
@@ -152,14 +151,13 @@ export function createUi({
 
   return {
     start() {
-      if (plain) output.write("git-scrivener\n");
-      else intro(styleText("inverse", " git-scrivener "), options);
+      if (!plain) output.write(`${styleText("gray", unicodeOr("┆", "|"))}\n`);
     },
     files(paths: readonly Buffer[]) {
       const title = `👀 Detected ${paths.length} staged ${paths.length === 1 ? "file" : "files"}:`;
       const names = paths.map((path) => `   ${displayPath(path)}`).join("\n");
       if (plain) output.write(`${title}\n${names}\n`);
-      else step(`${title}\n${styleText("dim", names)}`);
+      else step(`${title}\n${styleText("dim", names)}`, 0);
     },
     display(message: string) {
       if (plain) output.write(`\n${message}\n\n`);

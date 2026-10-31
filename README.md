@@ -11,8 +11,10 @@
 
 # git-scrivener
 
-A personal CLI for generating Conventional Commit messages from staged Git changes using AI.
-![Terraform](./docs/ss.png)
+A personal CLI for generating Conventional Commit messages from staged Git changes using AI.  
+
+![demo](./docs/ss.png)
+
 ## Usage
 With `git-scrivener` on `PATH` and `OPENAI_API_KEY` provided by your runtime environment:
 ```sh

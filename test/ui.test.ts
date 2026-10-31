@@ -141,7 +141,7 @@ test("timeline markers decorate steps without changing file names or candidate t
   const text = stripVTControlCharacters(view.text());
   assert.match(
     text,
-    /│\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
+    /^┆\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
   );
   assert.match(text, /○  Candidate regenerated in \d+\.\ds\n/);
   assert.match(text, /│\n│  docs: describe ◇ and ❯ symbols\n│\n│  Keep their literal contents\.\n/);
@@ -346,7 +346,7 @@ test("plain progress and output contain no cursor commands or ANSI styling", asy
   view.ui.display("feat: add documentation");
   await view.ui.progress("Analyzing staged changes", "Changes analyzed", async () => undefined);
   view.ui.cancel();
-  assert.match(view.text(), /Detected 1 staged file:/);
+  assert.match(view.text(), /^👀 Detected 1 staged file:/);
   assert.match(view.text(), /Changes analyzed in \d+\.\ds/);
   assert.match(view.text(), /Cancelled\. No commit was created\./);
   assert.equal(view.text().includes("\x1b"), false);
