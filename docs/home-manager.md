@@ -50,9 +50,73 @@ git scrivener --plain
 
 When changing providers, supply the corresponding runtime API key. If you set an explicit `model` in Home Manager, override it as well when switching providers, as shown above. With `model = null`, the CLI selects the new provider's default automatically. Alternative models must be available to your account and support the provider's API and Structured Outputs. The module forwards arguments unchanged and uses `exec`, preserving the CLI's exit status and terminal input.
 
-## Runtime API keys and SOPS
+## Runtime API keys
 
 The module inherits `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from the environment. It does not read secret contents during Nix evaluation, provide an inline API-key option, or depend on SOPS. Key provisioning remains the consumer's responsibility.
+
+Choose either a local key file or your existing SOPS setup below. Add the program configuration to your existing Home Manager configuration; keep your current system, username, home directory, and `home.stateVersion`. Remove any previous direct `home.packages` installation of `git-scrivener` or its wrapper to avoid competing executables; the module handles installation.
+
+### Local key file without SOPS
+
+Run the following command in [Bash](https://www.gnu.org/s/bash/manual/html_node/Bash-Builtins.html) or [Zsh](https://zsh.sourceforge.io/Doc/Release/Shell-Builtin-Commands.html#index-read). Enter an **OpenAI API key** for the configuration below. Input is hidden while you type. The command creates or replaces `~/.config/git-scrivener/api_key`, storing the key as plaintext with file permissions `0600`.
+
+```bash
+(
+  set -e
+  umask 077
+
+  key_file="$HOME/.config/git-scrivener/api_key"
+  mkdir -p "${key_file%/*}"
+  touch "$key_file"
+  chmod 600 "$key_file"
+
+  printf 'API key: '
+  IFS= read -r -s api_key
+  printf '\n'
+  test -n "$api_key"
+  printf '%s\n' "$api_key" > "$key_file"
+)
+```
+
+Use this Home Manager configuration to read the file each time the CLI starts. As in the setup above, `inputs` must be available to the module.
+
+```nix
+{ inputs, pkgs, ... }:
+let
+  scrivener = inputs.git-scrivener.packages.${pkgs.stdenv.hostPlatform.system}.git-scrivener;
+in
+{
+  imports = [ inputs.git-scrivener.homeManagerModules.default ];
+
+  programs.git-scrivener = {
+    enable = true;
+    provider = "openai";
+    language = "en";
+    model = "gpt-6-luna";
+    package = pkgs.writeShellApplication {
+      name = "git-scrivener";
+      text = ''
+        OPENAI_API_KEY="$(< "$HOME/.config/git-scrivener/api_key")"
+        export OPENAI_API_KEY
+        exec "${scrivener}/bin/git-scrivener" "$@"
+      '';
+    };
+  };
+}
+```
+
+The module supplies the configured provider, language, and model arguments. The key-loading wrapper only reads the key and forwards the arguments; no `defaultArgs` variable is needed.
+
+For Anthropic, store an **Anthropic API key** in the file and change the provider, model, and both occurrences of the environment-variable name in the wrapper:
+
+| Provider | Model | Environment variable |
+| --- | --- | --- |
+| `openai` | `gpt-6-luna` | `OPENAI_API_KEY` |
+| `anthropic` | `claude-haiku-5-5` | `ANTHROPIC_API_KEY` |
+
+This example stores one provider's key. The key must match the selected provider. Keep the key file out of Git, and do not copy it into the Nix store using `home.file` or `builtins.readFile`. Only the wrapper script is installed through Nix; the key is read from your home directory at runtime.
+
+### SOPS
 
 If your existing SOPS setup provides a decrypted key file, keep that secret declaration and supply a key-loading `package`. This OpenAI example reads `config.sops.secrets.openai_api_key.path` only when the command runs:
 
@@ -82,7 +146,18 @@ in
 }
 ```
 
-The store contains the script and the secret's pathname, not its contents. Do not use `builtins.readFile` on the decrypted key or put API-key values in `home.sessionVariables`. Remove any previous direct `home.packages` installation of `git-scrivener` or its wrapper to avoid competing executables; the module now handles installation. The example loads only the OpenAI key; Anthropic needs `ANTHROPIC_API_KEY` supplied separately.
+The store contains the script and the secret's pathname, not its contents. Do not use `builtins.readFile` on the decrypted key or put API-key values in `home.sessionVariables`. The example loads only the OpenAI key; Anthropic needs `ANTHROPIC_API_KEY` supplied separately.
+
+## Apply the configuration
+
+For standalone Home Manager, run the following from your configuration's flake directory, replacing `YOUR_CONFIGURATION_NAME` with your existing `homeConfigurations` name:
+
+```sh
+home-manager switch --flake .#YOUR_CONFIGURATION_NAME
+git scrivener --help
+```
+
+If Home Manager is integrated with NixOS or nix-darwin, apply the configuration with your usual system rebuild command instead. See the [official commands for each installation method](https://nix-community.github.io/home-manager/usage/updating.html). The help command does not send an API request or create a commit.
 
 ## Validation
 
