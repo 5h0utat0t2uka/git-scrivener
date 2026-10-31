@@ -93,7 +93,7 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
     test ! -e "$out/lib/git-scrivener/node_modules"
     test -s "$out/lib/git-scrivener/dist/THIRD_PARTY_NOTICES.txt"
     SCRIVENER_TEST_CLI="$out/lib/git-scrivener/dist/cli.js" \
-      node --test test/cli.test.ts test/bundle.integration.ts
+      node --test test/cli.test.ts test/lazy-loading.test.ts test/bundle.integration.ts
     runHook postInstallCheck
   '';
 

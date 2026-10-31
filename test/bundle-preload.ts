@@ -16,6 +16,10 @@ globalThis.fetch = async (url, init) => {
   const body = (await request.json()) as { model: string; instructions?: string; system?: string };
   requests.push({ url: request.url, body });
   writeFileSync("requests.json", JSON.stringify(requests));
+  const status = Number(process.env.SCRIVENER_TEST_HTTP_STATUS ?? "200");
+  if (status !== 200) {
+    return Response.json({ error: { message: "PRIVATE_RESPONSE_DATA" } }, { status });
+  }
   const japanese = (body.instructions ?? body.system ?? "").includes("candidate in Japanese");
   const text = JSON.stringify({
     type: "feat",

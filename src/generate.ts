@@ -1,31 +1,11 @@
-import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod";
+import type { CommitCandidate } from "./candidate.ts";
 import { DEFAULT_MAX_DIFF_BYTES } from "./git.ts";
 import { assertNoSecrets } from "./secrets.ts";
 
 export const DEFAULT_MODEL = "gpt-6-luna";
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5";
 
-export const CommitCandidate = z.strictObject({
-  type: z.string(),
-  scope: z.string().nullable(),
-  description: z.string(),
-  body: z.string().nullable(),
-  breaking: z.boolean(),
-  breakingDescription: z.string().nullable(),
-  footers: z.array(
-    z.strictObject({
-      token: z.string(),
-      separator: z.enum([":", "#"]),
-      value: z.string(),
-    }),
-  ),
-});
-
-export type CommitCandidate = z.infer<typeof CommitCandidate>;
+export type { CommitCandidate } from "./candidate.ts";
 export class GenerationError extends Error {}
 
 interface GenerationSettings {
@@ -133,9 +113,13 @@ export async function generateCandidate(
 
   const providerName = provider === "openai" ? "OpenAI" : "Anthropic";
   const instructions = generationInstructions(language);
+  // No SDK, provider helper, or schema runtime is loaded before the safety checks.
+  const sdk = provider === "openai" ? await import("openai") : await import("@anthropic-ai/sdk");
+  const { CommitCandidate } = await import("./candidate.ts");
   try {
-    if (provider === "anthropic") {
-      const client = new Anthropic({
+    if ("Anthropic" in sdk) {
+      const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
+      const client = new sdk.Anthropic({
         apiKey,
         authToken: null,
         baseURL: "https://api.anthropic.com",
@@ -169,7 +153,8 @@ export async function generateCandidate(
       }
       return format.parse(blocks[0].text);
     }
-    const client = new OpenAI({
+    const { zodTextFormat } = await import("openai/helpers/zod");
+    const client = new sdk.OpenAI({
       apiKey,
       baseURL: "https://api.openai.com/v1",
       logLevel: "off",
@@ -204,21 +189,15 @@ export async function generateCandidate(
     return response.output_parsed;
   } catch (error) {
     if (error instanceof GenerationError) throw error;
-    if (
-      error instanceof OpenAI.APIConnectionTimeoutError ||
-      error instanceof Anthropic.APIConnectionTimeoutError
-    ) {
+    if (error instanceof sdk.APIConnectionTimeoutError) {
       throw new GenerationError(
         `The ${providerName} request timed out. No candidate was accepted.`,
       );
     }
-    if (
-      error instanceof OpenAI.APIConnectionError ||
-      error instanceof Anthropic.APIConnectionError
-    ) {
+    if (error instanceof sdk.APIConnectionError) {
       throw new GenerationError(`Could not connect to ${providerName}. No candidate was accepted.`);
     }
-    if (error instanceof OpenAI.APIError || error instanceof Anthropic.APIError) {
+    if (error instanceof sdk.APIError) {
       const status = error.status;
       if (status === 401)
         throw new GenerationError(`${providerName} rejected the API credentials (HTTP 401).`);

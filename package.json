@@ -15,7 +15,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "test:bundle": "SCRIVENER_TEST_CLI=./dist/cli.js node --test test/cli.test.ts test/bundle.integration.ts",
+    "test:bundle": "SCRIVENER_TEST_CLI=./dist/cli.js node --test test/cli.test.ts test/lazy-loading.test.ts test/bundle.integration.ts",
     "lint": "oxlint src test tsdown.config.ts",
     "format": "oxfmt --write src test tsdown.config.ts",
     "format:check": "oxfmt --check src test tsdown.config.ts"

@@ -18,6 +18,7 @@ export default defineConfig({
   clean: true,
   minify: false,
   sourcemap: false,
+  outputOptions: { codeSplitting: true },
   deps: {
     alwaysBundle: (id) => !isBuiltin(id),
     onlyBundle: false,
@@ -25,6 +26,34 @@ export default defineConfig({
     onlyImport: [],
   },
   plugins: [
+    {
+      name: "bundle-load-map",
+      generateBundle(_options, bundle) {
+        // Map executed chunks back to packages without embedding build-machine paths.
+        const chunks = Object.values(bundle).flatMap((chunk) =>
+          chunk.type === "chunk"
+            ? [
+                {
+                  file: chunk.fileName,
+                  bytes: Buffer.byteLength(chunk.code),
+                  imports: chunk.imports,
+                  dynamicImports: chunk.dynamicImports,
+                  modules: chunk.moduleIds.map((id) => {
+                    const marker = "/node_modules/";
+                    const index = id.lastIndexOf(marker);
+                    return index < 0 ? relative(process.cwd(), id) : id.slice(index + 1);
+                  }),
+                },
+              ]
+            : [],
+        );
+        this.emitFile({
+          type: "asset",
+          fileName: "bundle-load-map.json",
+          source: `${JSON.stringify(chunks, null, 2)}\n`,
+        });
+      },
+    },
     {
       name: "third-party-notices",
       async generateBundle(_options, bundle) {
