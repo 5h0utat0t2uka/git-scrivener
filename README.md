@@ -10,7 +10,6 @@
 <span style="color:#55FFFF"> </span><span style="color:#00AAAA">▀██▀     </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">        </span><span style="color:#555555">▀</span><span style="color:#00AAAA">▀ </span><span style="color:#AAAAAA">      </span><span style="color:#55FFFF">    </span><span style="color:#555555">▀</span><span style="color:#555555;background-color:#00AAAA">▓▒░</span><span style="color:#00AAAA">▀  </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">       </span><span style="color:#555555">▀</span><span style="color:#555555;background-color:#00AAAA">░</span><span style="color:#00AAAA">▀</span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">        </span><span style="color:#555555">▀</span><span style="color:#00AAAA">▀ </span></pre>
 
 # git-scrivener
-
 A personal CLI for generating Conventional Commit messages from staged Git changes using AI.  
 
 ![demo](./docs/ss.png)
