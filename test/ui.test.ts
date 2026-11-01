@@ -141,7 +141,7 @@ test("timeline markers decorate steps without changing file names or candidate t
   const text = stripVTControlCharacters(view.text());
   assert.match(
     text,
-    /^┆\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
+    /^\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
   );
   assert.match(text, /○  Candidate regenerated in \d+\.\ds\n/);
   assert.match(text, /│\n│  docs: describe ◇ and ❯ symbols\n│\n│  Keep their literal contents\.\n/);
@@ -298,7 +298,7 @@ test("Git output continues the timeline without extra gaps and preserves indenta
       "│  Detect hardcoded secrets...Passed\n│  zizmor...(no files to check)Skipped\n" +
       "│  [main (root-commit) 625f1fe] docs: add README\n" +
       "│   1 file changed, 1 insertion(+)\n│\n" +
-      "│   create mode 100644 日本語.md\n│\n└  Commit created.\n\n",
+      "│   create mode 100644 日本語.md\n│\n○  Commit created.\n\n",
   );
 
   const plain = terminal(t, true);

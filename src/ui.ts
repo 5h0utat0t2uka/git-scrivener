@@ -17,7 +17,6 @@ import {
   isCancel,
   limitOptions,
   log,
-  outro,
   unicodeOr,
   updateSettings,
 } from "@clack/prompts";
@@ -151,7 +150,7 @@ export function createUi({
 
   return {
     start() {
-      if (!plain) output.write(`${styleText("gray", unicodeOr("┆", "|"))}\n`);
+      if (!plain) output.write("\n");
     },
     files(paths: readonly Buffer[]) {
       const title = `👀 Detected ${paths.length} staged ${paths.length === 1 ? "file" : "files"}:`;
@@ -205,7 +204,10 @@ export function createUi({
     },
     finish(message: string) {
       if (plain) output.write(`${message}\n`);
-      else outro(message, options);
+      else {
+        log.message(message, { ...options, symbol: styleText("gray", stepSymbol) });
+        output.write("\n");
+      }
     },
     cancel() {
       const message = "Cancelled. No commit was created.";
