@@ -143,7 +143,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   } finally {
     commitOutput?.finish();
   }
-  terminal.finish("Commit created.");
+  terminal.finish("Commit created.", true);
 }
 
 try {

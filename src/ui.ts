@@ -202,10 +202,13 @@ export function createUi({
         },
       };
     },
-    finish(message: string) {
+    finish(message: string, success = false) {
       if (plain) output.write(`${message}\n`);
       else {
-        log.message(message, { ...options, symbol: styleText("gray", stepSymbol) });
+        log.message(message, {
+          ...options,
+          symbol: styleText(success ? "green" : "gray", stepSymbol),
+        });
         output.write("\n");
       }
     },
@@ -299,7 +302,12 @@ export function createUi({
               )}`;
             }
             const prefix = `${styleText("cyan", S_BAR)}  `;
-            const footer = formatInstructionFooter(SELECT_INSTRUCTIONS, true);
+            const footer = [
+              ...formatInstructionFooter(SELECT_INSTRUCTIONS, false).map(
+                (line) => `${prefix}${line}`,
+              ),
+              styleText("cyan", S_BAR),
+            ];
             const choices = limitOptions({
               output,
               options: this.options,

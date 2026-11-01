@@ -291,7 +291,7 @@ test("Git output continues the timeline without extra gaps and preserves indenta
   output.write(" 1 file changed, 1 insertion(+)\n\n");
   output.write(" create mode 100644 日本語.md");
   output.finish();
-  view.ui.finish("Commit created.");
+  view.ui.finish("Commit created.", true);
   assert.equal(
     stripVTControlCharacters(view.text()),
     "│\n○  Committing with Git\n" +
