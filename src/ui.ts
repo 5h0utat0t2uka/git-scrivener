@@ -159,8 +159,15 @@ export function createUi({
       else step(`${title}\n${styleText("dim", names)}`, 0);
     },
     display(message: string) {
-      if (plain) output.write(`\n${message}\n\n`);
-      else log.message(message, options);
+      const prefix = `${S_BAR}  `;
+      if (plain || getColumns(output) < prefix.length + 2) {
+        output.write(`\n${message}\n\n`);
+        return;
+      }
+      const wrapped = wrapTextWithPrefix(output, message.replaceAll("\t", "    "), prefix);
+      // Measure the unstyled prefix above; log.message adds its own colored guide to each row.
+      const rows = wrapped.split("\n").map((line) => line.slice(prefix.length));
+      log.message(rows, options);
     },
     error(message: string) {
       if (plain) errorOutput.write(`${message}\n`);

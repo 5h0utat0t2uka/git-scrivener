@@ -148,6 +148,16 @@ test("timeline markers decorate steps without changing file names or candidate t
   assert.match(text, /│\n○  Committing with Git\n└  Cancelled\. No commit was created\.\n/);
 });
 
+test("candidate preview keeps wrapped rows aligned at the current terminal width", (t) => {
+  const view = terminal(t);
+  view.output.columns = 15;
+  view.ui.display("feat: scroll\n\n日本語の本文です\nabcdefghijklmnop");
+  assert.equal(
+    stripVTControlCharacters(view.text()),
+    "│\n│  feat: scroll\n│\n│  日本語の本文\n│  です\n│  abcdefghijkl\n│  mnop\n",
+  );
+});
+
 test("progress shows elapsed time and releases its signal handlers on success and failure", async (t) => {
   for (const fails of [false, true]) {
     const view = terminal(t);
