@@ -10,174 +10,51 @@
 <span style="color:#55FFFF"> </span><span style="color:#00AAAA">▀██▀     </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">        </span><span style="color:#555555">▀</span><span style="color:#00AAAA">▀ </span><span style="color:#AAAAAA">      </span><span style="color:#55FFFF">    </span><span style="color:#555555">▀</span><span style="color:#555555;background-color:#00AAAA">▓▒░</span><span style="color:#00AAAA">▀  </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">       </span><span style="color:#555555">▀</span><span style="color:#555555;background-color:#00AAAA">░</span><span style="color:#00AAAA">▀</span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">     </span><span style="color:#00AAAA">▀██▀ </span><span style="color:#AAAAAA"> </span><span style="color:#55FFFF">        </span><span style="color:#555555">▀</span><span style="color:#00AAAA">▀ </span></pre>
 
 # git-scrivener
-A personal CLI for generating Conventional Commit messages from staged Git changes using AI.  
 
-![demo](./docs/ss.png)
+Generate a [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) message from staged Git changes. Review it in your terminal and commit using your existing Git hooks and signing settings.
 
-## Usage
-With `git-scrivener` on `PATH` and `OPENAI_API_KEY` provided by your runtime environment:
+![Terminal session reviewing a generated commit message](./docs/ss.png)
+
+## Quick start
+
+With Nix flakes enabled, open a shell in the repository you want to commit to.
+
 ```sh
-git add <files>
+nix shell github:5h0utat0t2uka/git-scrivener
+```
+
+Set your provider's API key in the shell environment. The default is OpenAI with English commit messages.
+
+| Provider | Default model | Environment variable |
+| --- | --- | --- |
+| OpenAI | `gpt-6-luna` | `OPENAI_API_KEY` |
+| Anthropic | `claude-haiku-5-5` | `ANTHROPIC_API_KEY` |
+
+```sh
+git add -- README.md  # Choose the files to include
 git scrivener
 ```
 
-The defaults are OpenAI, `gpt-6-luna`, and English commit messages. Use `--model <id>` to change the model, `--language ja` for Japanese messages, or `--check` to inspect staged changes without an API request.
+**Confirm** is selected by default. Press Enter to commit, or use the arrow keys to choose **Edit**, **Regenerate**, or **Cancel**. Saving in your Git editor returns you to review. Cancelling keeps your changes staged. If you switch branches or change what is staged during review, run `git scrivener` again.
 
-```sh
-# OpenAI with a Japanese commit message (requires OPENAI_API_KEY)
-git scrivener --language ja
+To generate a Japanese message with Anthropic, run `git scrivener --provider anthropic --language ja`. Use `--model <id>` to select a model that supports Structured Outputs, `--plain` for typed shortcuts, and `--help` for all options.
 
-# Anthropic with Haiku 5.5 (requires ANTHROPIC_API_KEY)
-git scrivener --provider anthropic
-git scrivener --provider anthropic --language ja
-```
+For persistent installation and API key setup, see the [Home Manager guide](docs/home-manager.md).
 
-`--provider` accepts `openai` or `anthropic`; only the selected provider's API key is required. The default models are `gpt-6-luna` for OpenAI and `claude-haiku-5-5` for Anthropic. Override either with `--model`; the model must support the provider's API and Structured Outputs. Provider, model, and language are retained during regeneration; failures never switch providers automatically. `--language` accepts `en` or `ja` and affects the description, body, breaking-change explanation, and natural-language footer values. Conventional Commit tokens remain in English, and code identifiers and paths are preserved. The CLI's menus and status messages remain in English. Language is a generation instruction, not a language-detection restriction on manually edited messages.
+## What gets sent
 
-The CLI generates and validates a Conventional Commit candidate from staged changes, then offers confirmation, editing, regeneration, and cancellation. Explicit confirmation runs `git commit --file` using the accepted message. Use `--check` for staged-diff inspection without an API request.
+`git scrivener --check` reports the staged diff size locally. Generation sends the staged diff to the selected provider. Regeneration also sends the previous candidate. Betterleaks scans the outgoing text and blocks the request on a finding or scan error. Review `git diff --cached` for secrets the scanner may miss. The default size limit is 1 MiB.
 
-- Reads only the index, including initial commits and partially staged files.
-- Rejects an empty diff, unresolved conflicts, non-UTF-8 text, and diffs exceeding the configured byte limit.
-- Disables external diff and textconv commands and checks for HEAD or index changes during inspection.
-- Does not stage files automatically. Inspection, editing, and cancellation leave staged contents and working files unchanged. `git write-tree` may create tree objects and update Git's index cache.
-- Prints the diff size without printing the patch. Binary files use Git's binary-change summary.
+OpenAI requests use `store: false`. Data retention depends on the provider and account settings. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) and [Anthropic data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention).
 
 ## Development
 
+From a checkout, run `nix build .#git-scrivener` to build and test the CLI. The executable is `result/bin/git-scrivener`. For development, the Nix shell supplies Node.js 26 and pnpm 12.
+
 ```sh
-direnv allow
+nix develop
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
 pnpm test
-pnpm build
-pnpm test:bundle
-node dist/cli.js --help
 ```
 
-The Nix development shell and package build use Node.js 26 and pnpm 12 (`pkgs.nodejs_26` and `pkgs.pnpm_12`). The nixpkgs revision in `flake.lock` determines the exact versions. Oxlint and Oxfmt also come from Nix. Tests use Node's built-in test runner and create isolated Git repositories under `.test-tmp/`; they do not use your signing configuration or hooks.
-
-Generation tests use both official SDKs with in-memory HTTP transports and synthetic credentials. They require Betterleaks from the development shell, but do not contact either provider or validate credentials against provider APIs.
-
-`pnpm build` uses tsdown to bundle the CLI and its JavaScript dependencies for Node.js 26 or newer. The [build target](https://tsdown.dev/options/target) comes from `engines.node` in `package.json`. It preserves readable output without minification and writes dependency licenses to `dist/THIRD_PARTY_NOTICES.txt`. `pnpm typecheck` remains a separate required check. `pnpm test:bundle` tests the built CLI, including both providers, English/Japanese output, confirmation, cancellation, and regeneration using a test-only HTTP preload; it does not call real APIs.
-
-Inspect the currently staged changes during development:
-
-```sh
-pnpm dev --check
-pnpm dev --check --max-diff-bytes 524288
-```
-
-The default limit is 1,048,576 bytes for the complete UTF-8 diff, including patch headers. This is a CLI size policy, not a model context-window guarantee. The patch is never silently truncated.
-
-To generate a candidate, provide the selected provider's API key through your runtime environment, then run `pnpm dev` with the same provider, model, and language options as the installed CLI. OpenAI models must support Responses and Structured Outputs; Anthropic models must support Messages and Structured Outputs. The same byte limit applies to the JSON-encoded input, so escaping and regeneration context can cause a request to exceed the limit even when the raw diff fits.
-
-Generation requires an interactive terminal. A timeline displays staged file paths, a spinner during generation or regeneration, and the elapsed processing time. The duration includes the secret scan, API request, and candidate validation. Filenames containing terminal controls or non-UTF-8 bytes are escaped for display.
-
-While waiting, only the spinner symbol is updated; its label stays visible without repeated erasing. The label is redrawn when the terminal is resized and shortened with an ellipsis if needed to fit on one row. Completion and failure messages still include elapsed time. Cancellation restores the cursor and terminal input before exiting.
-
-Timeline steps and review questions use `○`. This marker is defined in `src/ui.ts`; the selection menu uses Clack Core's public render API while Clack handles keyboard input and terminal restoration.
-
-Use the up/down arrows to choose **Confirm**, **Edit**, **Regenerate**, or **Cancel**, then press Enter. Confirm is initially selected each time the menu opens, so pressing Enter accepts the displayed candidate and starts the commit. Ctrl-C, Ctrl-D, Escape, or EOF at the selection menu cancel. Saving an edit or regenerating returns to this menu and still requires pressing Enter to confirm. Failed edits and failed regeneration keep the previous candidate visible for an explicit decision. The menu restores normal terminal input before launching the editor or Git; hooks and signing prompts run without a spinner.
-
-Use `--plain` for static output and typed shortcuts (`c`, `e`, `r`, or `q` followed by Enter), suitable for screen readers or terminals without cursor control. An empty answer, EOF, or Ctrl-C cancels in this mode. Plain mode is also enabled by `TERM=dumb` or `ACCESSIBLE=1`/`true`. `NO_COLOR=1` disables colors while retaining the interactive menu and spinner.
-
-The editor comes from `git var GIT_EDITOR`, including configured arguments and quoting, and runs using Git's POSIX shell from `git var GIT_SHELL_PATH`. Its message file starts with mode `0600` in a private `0700` temporary directory and is removed when editing finishes. Edited messages are read with a size bound, rejected if they are symlinks or have additional hard links, and validated before replacing the candidate. Saving and quitting the editor returns to review.
-
-Immediately before committing or regenerating, the CLI checks that HEAD, its branch reference, and the index tree still match the generation snapshot. A mismatch ends the operation and requires a fresh invocation. This check is not an atomic lock against other Git processes; avoid changing the index or branch concurrently. Git hooks can themselves change the index or commit message.
-
-Commits use the configured Git hooks and signing settings, including SSH signing. Hook or signing failures stop the operation without an unsigned retry or an index reset. Both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are removed from the environment passed to the editor and commit process. Tests cover hook execution and simulated SSH signing failure; live provider access and physical YubiKey signing still need an end-to-end check in the target environment.
-
-Git's standard output and standard error, including hook results, are merged into one stream and displayed with a `│` guide. Partial lines are displayed immediately, and indentation is preserved. Input remains connected to the terminal, and signing programs can still use `/dev/tty`. Prompts written directly to `/dev/tty` are outside the captured stream and are not decorated. In the decorated mode, Git and hook output descriptors are pipes rather than TTYs; use `--plain` for hooks requiring terminal output or full-screen controls. Plain mode leaves all three descriptors connected directly to the terminal.
-
-For decorated output to a terminal, the commit process receives `PRE_COMMIT_COLOR=always` and `PREK_COLOR=always` when those settings are unset or `auto`, preserving colored hook results alongside the guide. Explicit settings such as `never` are kept. This automatic color adjustment is disabled by a nonempty `NO_COLOR`, `FORCE_COLOR=0`, or `TERM=dumb`, and is not applied in plain mode or to redirected output. See the [pre-commit color implementation](https://github.com/pre-commit/pre-commit/blob/main/pre_commit/color.py) and [prek color setting](https://prek.j178.dev/reference/environment-variables/#prek_color).
-
-The package declares the executable name `git-scrivener`, for invocation as `git scrivener` once installed on `PATH`.
-
-## Nix package
-
-`nix/package.nix` defines the package, exported as `packages.<system>.git-scrivener` and `packages.<system>.default`. The build includes type checking, lint, the source test suite, and integration tests against the installed bundle.
-
-Build and inspect the package:
-
-```sh
-nix build .#git-scrivener
-./result/bin/git-scrivener --help
-nix run .#git-scrivener -- --version
-```
-
-To use Git's external-command dispatch with the local build:
-
-```sh
-PATH="$PWD/result/bin:$PATH" git scrivener --version
-```
-
-The package uses the same pinned Node.js and pnpm as the development shell. `fetchPnpmDeps` downloads the lockfile dependencies; subsequent installation, bundling, and tests run offline. Only the bundled JavaScript, third-party notices, and package metadata are installed, without `node_modules`. The installed bundle is tested again to verify that it works without separately installed JavaScript dependencies. Its launcher supplies Git and Betterleaks and keeps the user's environment available for the editor, SSH agent, signing program, and hooks.
-
-After updating pnpm or dependencies, regenerate `pnpm-lock.yaml` with the development shell's pnpm. Recalculate `pnpmDeps.hash` in `nix/package.nix` by setting it to an empty string and building `.#git-scrivener.pnpmDeps`; copy the reported `got: sha256-...` value into the hash, then build the complete package. Keep the workspace's dependency security policies enabled during updates.
-
-pnpm 12 records the pinned package manager and application dependencies in separate YAML documents within `pnpm-lock.yaml`. GitHub currently cannot detect dependencies from this format in its dependency graph: Dependabot version updates work, but alerts and security update PRs for those dependencies do not. See [GitHub's pnpm support notes](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories#pnpm).
-
-Build sources are limited to TypeScript source/tests, named build configuration files, and supplemental dependency licenses. The dependency fetcher receives only the package manifest, lockfile, and workspace configuration. API keys are never read during Nix evaluation or builds; provide them only at runtime. When building a local Git flake, new source files must be known to Git. Keep secrets untracked: the flake itself is copied to the Nix store before the package's source filter runs.
-
-See [bundle measurements](docs/performance.md) for package size, runtime closure size, startup timing, and reproduction commands. If a dependency's npm archive omits its license, a version-specific upstream copy is kept under `licenses/`; verify it when updating that dependency.
-
-Home Manager users can import `inputs.git-scrivener.homeManagerModules.default` and configure the CLI through `programs.git-scrivener`:
-
-```nix
-{
-  imports = [ inputs.git-scrivener.homeManagerModules.default ];
-
-  programs.git-scrivener = {
-    enable = true;
-    provider = "openai";
-    language = "en";
-    model = "gpt-6-luna";
-  };
-}
-```
-
-This belongs in a Home Manager module with access to `inputs`. API keys are still provided at runtime. See [Home Manager setup](docs/home-manager.md) for defaults, CLI overrides, and integration with an existing SOPS key loader.
-
-## API generation policy
-
-- OpenAI (default) uses the official OpenAI SDK and Responses API. Its default model is `gpt-6-luna`; `--model` accepts an explicit model override.
-- Anthropic uses the official `@anthropic-ai/sdk` and Messages API, defaulting to `claude-haiku-5-5`. `--model` accepts an explicit override. Both providers use the same Zod candidate schema and CLI message validation. Anthropic stop reasons are checked before parsing JSON, so refusals and incomplete responses cannot be accepted as candidates. Text blocks are selected by type so adaptive thinking blocks do not become part of the commit message. Thinking tokens share the existing 4,096-token output budget; exhausting it stops generation without accepting a partial message. See the [Haiku 5.5 migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide).
-- Reads `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` at runtime. Endpoints are fixed to `https://api.openai.com/v1` and `https://api.anthropic.com`, respectively. SDK endpoint overrides, logging, HTTP redirects, and automatic retries are disabled. Anthropic's SDK telemetry is also disabled. No automatic provider fallback is performed.
-- OpenAI requests set `store: false` and disable input truncation. `store: false` is not a guarantee of zero data retention; see [OpenAI's data controls](https://developers.openai.com/api/docs/guides/your-data). Anthropic requests do not send this OpenAI-specific parameter; retention depends on Anthropic's model, feature, and account policies. The CLI does not guarantee zero retention for either provider; see [Anthropic's API and data retention policy](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention).
-- Keeps generation instructions separate from the untrusted diff and previous candidate. The JSON-encoded input has a separate byte-limit check, including the previous candidate when regenerating.
-- Blocks either configured provider's API key if it occurs in the outgoing diff or previous candidate, including an unused provider's key. Scans all outgoing diff lines and any previous candidate with Betterleaks before making a request. The scanner uses its embedded rules in an isolated temporary directory, ignores target-repository overrides and inline allow comments, receives neither provider's environment variables, and performs no live credential validation. Scan errors block the request. The diff is passed through stdin, not written to the temporary directory.
-- Secret detection is heuristic and does not establish that arbitrary data is safe to share. API errors, refusals, malformed output, and incomplete responses are rejected without printing their raw contents.
-
-## Message validation
-
-Messages support optional scopes, multi-paragraph bodies, multiline footer values, `!`, `BREAKING CHANGE:`, and `BREAKING-CHANGE:`. Types are case-insensitive and are not restricted to a fixed list. No subject length limit is imposed. Validation checks structure, not whether a chosen type accurately describes the code change.
-
-The CLI separately rejects unsafe terminal control characters and messages larger than 65,536 bytes. These are safety policies, not Conventional Commits requirements. CRLF and trailing newlines are normalized. As in the specification, a footer token and separator start a footer section after a blank line; otherwise body text remains free-form.
-
-## Project-local skills
-
-```sh
-nix run --no-write-lock-file .#skills-install-local
-```
-
-Skills are copied into the generated, Git-ignored `.agents/skills/` directory. No skills are selected yet.
-
-## References
-
-- [Git diff](https://git-scm.com/docs/git-diff)
-- [Git write-tree](https://git-scm.com/docs/git-write-tree)
-- [Git editor resolution](https://git-scm.com/docs/git-var)
-- [Git commit](https://git-scm.com/docs/git-commit)
-- [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
-- [Node.js TypeScript support](https://nodejs.org/docs/latest-v24.x/api/typescript.html)
-- [Node.js test runner](https://nodejs.org/docs/latest-v24.x/api/test.html)
-- [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-- [Anthropic TypeScript SDK structured output helpers](https://github.com/anthropics/anthropic-sdk-typescript/blob/main/helpers.md#structured-outputs)
-- [Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
-- [Anthropic stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
-- [Nixpkgs pnpm packaging](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/javascript.section.md#pnpm-javascript-pnpm)
-- [pnpm installation options](https://pnpm.io/cli/install)
-- [Nix flakes](https://nix.dev/concepts/flakes)
-- [Clack prompts](https://github.com/bombshell-dev/clack/tree/main/packages/prompts)
-- [Clack Core custom rendering](https://github.com/bombshell-dev/clack/tree/main/packages/core)
+[Dependency updates](docs/update.md) · [Performance measurements](docs/performance.md)
