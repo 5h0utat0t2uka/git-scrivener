@@ -10,21 +10,22 @@ nix eval --impure --json --expr '
     flake = builtins.getFlake (toString ./.);
     pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
   in {
-    nodejs = pkgs.nodejs.version;
-    pnpm = pkgs.pnpm.version;
+    nodejs = pkgs.nodejs_26.version;
+    pnpm = pkgs.pnpm_12.version;
   }
 '
 ```
 
 - Node.jsが `package.json`の`engines.node`の範囲か確認する
-- `package.json` の `packageManager` を確認した `pnpm@バージョン` に変更
+- pnpm が `package.json` の `devEngines.packageManager.version` の範囲か確認する
 
 3. 開発環境とlockfileを更新する
-`pnpm --version` が手順1の版と一致することを確認
+`node --version` と `pnpm --version` が手順2の版と一致することを確認
 ```sh
 direnv reload
 ```
 ```sh
+node --version
 pnpm --version
 pnpm install --ignore-scripts
 ```

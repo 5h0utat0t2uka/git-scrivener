@@ -3,6 +3,8 @@
   git-hooks,
   system,
   src,
+  nodejs,
+  pnpm,
 }:
 
 git-hooks.lib.${system}.run {
@@ -18,7 +20,10 @@ git-hooks.lib.${system}.run {
     node-tests = {
       enable = true;
       name = "node-test";
-      entry = "${pkgs.pnpm}/bin/pnpm test";
+      entry = toString (pkgs.writeShellScript "scrivener-node-tests" ''
+        export PATH="${nodejs}/bin:$PATH"
+        exec "${pnpm}/bin/pnpm" test
+      '');
       files = "^((src|test)/.*\\.ts|package\\.json|pnpm-lock\\.yaml|tsconfig(\\.build)?\\.json)$";
       pass_filenames = false;
     };

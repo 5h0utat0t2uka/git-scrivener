@@ -51,9 +51,12 @@
             })
           ];
         };
-        scrivener = import ./nix/package.nix { inherit pkgs; };
+        nodejs = pkgs.nodejs_26;
+        # fetchPnpmDeps uses pnpm's nodejs-slim when installing the locked dependencies.
+        pnpm = pkgs.pnpm_12.override { nodejs-slim = pkgs.nodejs-slim_26; };
+        scrivener = import ./nix/package.nix { inherit pkgs nodejs pnpm; };
         preCommit = import ./nix/pre-commit.nix {
-          inherit pkgs git-hooks system;
+          inherit pkgs git-hooks system nodejs pnpm;
           src = ./.;
         };
         agentLib = agent-skills.lib.agent-skills;
@@ -77,7 +80,7 @@
           pre-commit = preCommit;
           package = scrivener;
           home-manager = import ./nix/tests/home-manager.nix {
-            inherit pkgs home-manager;
+            inherit pkgs home-manager nodejs;
             module = self.homeManagerModules.default;
             package = scrivener;
           };
@@ -100,8 +103,8 @@
         };
         devShells.default = pkgs.mkShell {
           packages = [
-            pkgs.nodejs
-            pkgs.pnpm
+            nodejs
+            pnpm
             pkgs.git
             pkgs.age
             pkgs.betterleaks

@@ -55,11 +55,11 @@ pnpm test:bundle
 node dist/cli.js --help
 ```
 
-The Nix development shell supplies the standard `pkgs.nodejs` and `pkgs.pnpm` packages from the nixpkgs revision pinned in `flake.lock` (currently Node.js 24.21.0 and pnpm 12.9.0). When updating nixpkgs, check both versions against `devEngines.packageManager` and `engines.node`. Oxlint and Oxfmt also come from Nix. Tests use Node's built-in test runner and create isolated Git repositories under `.test-tmp/`; they do not use your signing configuration or hooks.
+The Nix development shell and package build use Node.js 26 and pnpm 12 (`pkgs.nodejs_26` and `pkgs.pnpm_12`). The nixpkgs revision in `flake.lock` determines the exact versions. Oxlint and Oxfmt also come from Nix. Tests use Node's built-in test runner and create isolated Git repositories under `.test-tmp/`; they do not use your signing configuration or hooks.
 
 Generation tests use both official SDKs with in-memory HTTP transports and synthetic credentials. They require Betterleaks from the development shell, but do not contact either provider or validate credentials against provider APIs.
 
-`pnpm build` uses [tsdown](https://tsdown.dev/options/dependencies) to bundle the CLI and its JavaScript dependencies for Node.js 24 or newer. It preserves readable output without minification and writes dependency licenses to `dist/THIRD_PARTY_NOTICES.txt`. `pnpm typecheck` remains a separate required check. `pnpm test:bundle` tests the built CLI, including both providers, English/Japanese output, confirmation, cancellation, and regeneration using a test-only HTTP preload; it does not call real APIs.
+`pnpm build` uses tsdown to bundle the CLI and its JavaScript dependencies for Node.js 26 or newer. The [build target](https://tsdown.dev/options/target) comes from `engines.node` in `package.json`. It preserves readable output without minification and writes dependency licenses to `dist/THIRD_PARTY_NOTICES.txt`. `pnpm typecheck` remains a separate required check. `pnpm test:bundle` tests the built CLI, including both providers, English/Japanese output, confirmation, cancellation, and regeneration using a test-only HTTP preload; it does not call real APIs.
 
 Inspect the currently staged changes during development:
 

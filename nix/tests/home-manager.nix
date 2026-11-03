@@ -3,6 +3,7 @@
   home-manager,
   module,
   package,
+  nodejs,
 }:
 
 let
@@ -27,7 +28,7 @@ let
   recorder = pkgs.writeShellApplication {
     name = "git-scrivener";
     text = ''
-      exec ${pkgs.nodejs}/bin/node ${recorderScript} "$@"
+      exec ${nodejs}/bin/node ${recorderScript} "$@"
     '';
   };
   evaluate =
@@ -99,7 +100,7 @@ assert lib.all (result: lib.length (installed result) == 1) [
   anthropic
   anthropicDefault
 ];
-pkgs.runCommand "git-scrivener-home-manager-test" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
+pkgs.runCommand "git-scrivener-home-manager-test" { nativeBuildInputs = [ nodejs ]; } ''
   ${executable defaults} > defaults.json
   ${executable japanese} > japanese.json
   ${executable anthropic} > anthropic.json

@@ -66,7 +66,7 @@ cd REPO
 git switch -c dev
 ```
 
-- [`flake.nix`](../flake.nix) と [`nix/package.nix`](../nix/package.nix) では、`flake.lock` で固定した Nixpkgs の `pkgs.nodejs`・`pkgs.pnpm` を使います。Nixpkgs 更新時は提供バージョンを確認し、`package.json` の `engines.node`・`packageManager` との整合性を確認します。  
+- [`flake.nix`](../flake.nix) で選択した `pkgs.nodejs_26`・`pkgs.pnpm_12` を開発シェルと [Nix パッケージ](../nix/package.nix) で使います。具体的なバージョンは `flake.lock` の Nixpkgs リビジョンで決まります。
 - [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) の内容をプロジェクトに合わせて変更  
 - Dependabotの設定  
   - [`.github/dependabot.yml`](../.github/dependabot.yml.template) の `assignees`を変更  

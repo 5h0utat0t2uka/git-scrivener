@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, nodejs, pnpm }:
 
 let
   inherit (pkgs) lib;
@@ -34,14 +34,14 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
   pnpmDeps = pkgs.fetchPnpmDeps {
     inherit (finalAttrs) pname version;
     src = dependencySource;
-    pnpm = pkgs.pnpm;
+    inherit pnpm;
     fetcherVersion = 5;
     hash = "sha256-V3RcgwEmZkj3IVd2ti2yYKY2lq+RgaDqLwjdpbrFfsM=";
   };
 
   nativeBuildInputs = [
-    pkgs.nodejs
-    pkgs.pnpm
+    nodejs
+    pnpm
     pkgs.pnpmConfigHook
     pkgs.makeWrapper
   ];
@@ -73,7 +73,7 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
 
     mkdir -p "$out/lib/git-scrivener" "$out/bin"
     cp -R dist package.json "$out/lib/git-scrivener/"
-    makeWrapper "${pkgs.nodejs}/bin/node" "$out/bin/git-scrivener" \
+    makeWrapper "${nodejs}/bin/node" "$out/bin/git-scrivener" \
       --add-flags "$out/lib/git-scrivener/dist/cli.js" \
       --prefix PATH : "${
         lib.makeBinPath [

@@ -11,7 +11,6 @@ const supplementalLicenses: Record<string, URL> = {
 export default defineConfig({
   entry: ["src/cli.ts"],
   platform: "node",
-  target: "node24",
   format: "esm",
   fixedExtension: false,
   dts: false,
