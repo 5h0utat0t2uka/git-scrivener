@@ -57,7 +57,7 @@ test(
       const view = terminal(t);
       const result = view.ui.prompt();
       const initial = stripVTControlCharacters(view.text());
-      assert.match(initial, /○  Use this commit message\?/);
+      assert.match(initial, /○  Accept this commit message\?/);
       assert.match(initial, /● Confirm \(Create the commit\)/);
       view.input.write(keys);
       assert.equal(await result, expected);

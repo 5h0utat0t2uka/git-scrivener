@@ -26,11 +26,11 @@ updateSettings({ aliases: { "\x04": "cancel" } });
 
 const stepSymbol = unicodeOr("○", "o");
 
-function displayPath(path: Buffer): string {
-  if (!isUtf8(path)) {
-    return `"${Array.from(path, (byte) => `\\x${byte.toString(16).padStart(2, "0")}`).join("")}"`;
+function terminalText(input: Buffer | string): string {
+  if (typeof input !== "string" && !isUtf8(input)) {
+    return `"${Array.from(input, (byte) => `\\x${byte.toString(16).padStart(2, "0")}`).join("")}"`;
   }
-  const value = path.toString("utf8");
+  const value = input.toString();
   // Escape control/format characters, including newlines, ANSI escapes, and bidi controls.
   if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)) {
     return JSON.stringify(value).replace(
@@ -154,7 +154,7 @@ export function createUi({
     },
     files(paths: readonly Buffer[]) {
       const title = `👀 Detected ${paths.length} staged ${paths.length === 1 ? "file" : "files"}:`;
-      const names = paths.map((path) => `   ${displayPath(path)}`).join("\n");
+      const names = paths.map((path) => `   ${terminalText(path)}`).join("\n");
       if (plain) output.write(`${title}\n${names}\n`);
       else step(`${title}\n${styleText("dim", names)}`, 0);
     },
@@ -230,7 +230,7 @@ export function createUi({
       if (plain) output.write(`${label}...\n`);
       try {
         const result = await task();
-        const message = `${completed} in ${elapsed(started)}`;
+        const message = `${terminalText(completed)} in ${elapsed(started)}`;
         stop?.();
         step(message, 0);
         return result;
@@ -288,13 +288,14 @@ export function createUi({
             { value: "cancel", label: "Cancel", hint: "Keep staged changes" },
           ],
           render() {
-            const color =
-              this.state === "cancel" ? "red" : this.state === "submit" ? "green" : "cyan";
-            const title = `${styleText("gray", S_BAR)}\n${styleText(
+            const guide = styleText("gray", S_BAR);
+            const prefix = `${guide}  `;
+            const color = this.state === "cancel" ? "red" : "green";
+            const title = `${guide}\n${styleText(
               color,
               wrapTextWithPrefix(
                 output,
-                "Use this commit message?",
+                "Accept this commit message?",
                 `${S_BAR}  `,
                 `${stepSymbol}  `,
               ),
@@ -302,18 +303,13 @@ export function createUi({
             if (this.state === "submit" || this.state === "cancel") {
               const label =
                 this.state === "cancel" ? "Cancelled" : this.options[this.cursor]!.label;
-              return `${title}${wrapTextWithPrefix(
-                output,
-                styleText("dim", label),
-                `${styleText("gray", S_BAR)}  `,
-              )}`;
+              return `${title}${wrapTextWithPrefix(output, styleText("dim", label), prefix)}`;
             }
-            const prefix = `${styleText("cyan", S_BAR)}  `;
             const footer = [
               ...formatInstructionFooter(SELECT_INSTRUCTIONS, false).map(
                 (line) => `${prefix}${line}`,
               ),
-              styleText("cyan", S_BAR),
+              guide,
             ];
             const choices = limitOptions({
               output,
