@@ -101,13 +101,9 @@ export async function generateCandidate(
   ) {
     throw new GenerationError("The API key occurs in the data to send. No request was made.");
   }
-  // Also remove patch prefixes so multiline secrets split across diff lines remain detectable.
-  const normalizedDiff = diff
-    .split("\n")
-    .map((line) => line.replace(/^[ +-]/, ""))
-    .join("\n");
-  await assertNoSecrets(`${textToScan}\n${normalizedDiff}`, {
+  await assertNoSecrets(diff, {
     env,
+    ...(previousCandidate === undefined ? {} : { previousCandidate }),
     ...(temporaryDirectory === undefined ? {} : { temporaryDirectory }),
   });
 

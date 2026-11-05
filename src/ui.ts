@@ -55,11 +55,11 @@ export function createUi({
   const options = { output, withGuide: true };
   const elapsed = (start: number) => `${((performance.now() - start) / 1_000).toFixed(1)}s`;
 
-  function wrappedRows(message: string) {
+  function wrappedRows(message: string, stream = output) {
     const prefix = `${S_BAR}  `;
-    if (getColumns(output) < prefix.length + 2) return undefined;
+    if (getColumns(stream) < prefix.length + 2) return undefined;
     // Reserve the guide's width. log.message adds the colored guide to each row.
-    return wrapTextWithPrefix(output, message, prefix)
+    return wrapTextWithPrefix(stream, message, prefix)
       .split("\n")
       .map((line) => line.slice(prefix.length));
   }
@@ -176,7 +176,11 @@ export function createUi({
     },
     error(message: string) {
       if (plain) errorOutput.write(`${message}\n`);
-      else log.error(message, { output: errorOutput, withGuide: true });
+      else
+        log.error(wrappedRows(message, errorOutput)?.join("\n") ?? message, {
+          output: errorOutput,
+          withGuide: true,
+        });
     },
     step,
     commitOutput() {

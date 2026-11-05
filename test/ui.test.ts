@@ -176,6 +176,16 @@ test("candidate preview keeps wrapped rows aligned at the current terminal width
   );
 });
 
+test("multiline scan diagnostics keep their guide when wrapping", (t) => {
+  const view = terminal(t);
+  view.output.columns = 30;
+  view.ui.error("Potential secrets detected.\ngithub-pat — config.txt:123 (added, staged)");
+  const lines = stripVTControlCharacters(view.text()).trimEnd().split("\n");
+  assert.equal(lines[1], "■  Potential secrets detected.");
+  assert.ok(lines.slice(2).every((line) => line.startsWith("│  ")));
+  assert.ok(lines.every((line) => line.length <= view.output.columns));
+});
+
 test("progress shows elapsed time and releases its signal handlers on success and failure", async (t) => {
   for (const fails of [false, true]) {
     const view = terminal(t);

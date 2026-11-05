@@ -480,7 +480,12 @@ test("both providers scan removed and context lines as well as additions before 
           fetch: mock.fetch,
           temporaryDirectory: repo.cwd,
         }),
-        SecretScanError,
+        (error: unknown) => {
+          assert.ok(error instanceof SecretScanError);
+          assert.match(error.message, /github-pat — staged diff:1 \(patch line\)/);
+          assert.equal(error.message.includes(token), false);
+          return true;
+        },
       );
       assert.equal(mock.requests.length, 0);
     }
@@ -501,7 +506,12 @@ test("both providers scan the previous candidate before regeneration", async (t)
         fetch: mock.fetch,
         temporaryDirectory: repo.cwd,
       }),
-      SecretScanError,
+      (error: unknown) => {
+        assert.ok(error instanceof SecretScanError);
+        assert.match(error.message, /github-pat — previous candidate:1 \(message line\)/);
+        assert.equal(error.message.includes(token), false);
+        return true;
+      },
     );
     assert.equal(mock.requests.length, 0);
   }

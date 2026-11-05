@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -106,7 +106,13 @@ for (const provider of ["openai", "anthropic"] as const) {
       assertLoaded(loadedModules(log), scenario === "secret" ? undefined : provider);
       if (scenario === "generate") assert.match(result.stdout, /Cancelled/);
       if (scenario === "http-error") assert.match(result.stdout + result.stderr, /HTTP 401/);
-      if (scenario === "secret") assert.match(result.stdout + result.stderr, /secret/i);
+      if (scenario === "secret") {
+        const output = result.stdout + result.stderr;
+        assert.match(output, /github-pat — file\.txt:1 \(added, staged\)/);
+        assert.equal(output.includes(token), false);
+        assert.equal(output.includes("token ="), false);
+        assert.equal(existsSync(join(repo.cwd, "requests.json")), false);
+      }
       assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
       repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
     });
