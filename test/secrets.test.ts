@@ -4,7 +4,12 @@ import { chmodSync, readdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { assertNoSecrets, SecretScanError } from "../src/secrets.ts";
+import {
+  assertNoSecrets,
+  parseSecretAllowances,
+  SecretFindingError,
+  SecretScanError,
+} from "../src/secrets.ts";
 import { readStagedSnapshot } from "../src/git.ts";
 import { fixture } from "./fixture.ts";
 
@@ -221,6 +226,7 @@ test("invalid, missing, oversized, and unsuccessful reports still block without 
   for (const [report, exitCode] of [
     ["", 42],
     ["PRIVATE_REPORT\n", 42],
+    ["github-pat\t1\t1", 42],
     ["github-pat\t0\t1\n", 42],
     ["github-pat\t1\t999\n", 42],
     ["github-pat\t2\t1\n", 42],
@@ -234,6 +240,11 @@ test("invalid, missing, oversized, and unsuccessful reports still block without 
       assertNoSecrets("PRIVATE_SOURCE", { env: repo.env, temporaryDirectory: repo.cwd }),
       (error: unknown) => {
         assert.ok(error instanceof SecretScanError);
+        assert.equal(
+          error instanceof SecretFindingError,
+          false,
+          "invalid reports cannot be approved",
+        );
         assert.match(error.message, /No request was made/);
         assert.match(
           error.message,
@@ -246,6 +257,132 @@ test("invalid, missing, oversized, and unsuccessful reports still block without 
     );
     assert.deepEqual(readdirSync(repo.cwd), ["betterleaks"]);
   }
+});
+
+test("allowance options require exact repository-relative paths without echoing invalid input", () => {
+  assert.deepEqual(
+    parseSecretAllowances([
+      "generic-password:pnpm-lock.yaml",
+      "github-pat:dir/literal'$(touch unexpected):日本語.txt",
+      "generic-password:*.yaml",
+    ]),
+    [
+      { rule: "generic-password", path: "pnpm-lock.yaml" },
+      { rule: "github-pat", path: "dir/literal'$(touch unexpected):日本語.txt" },
+      { rule: "generic-password", path: "*.yaml" },
+    ],
+  );
+  for (const value of [
+    "PRIVATE_INPUT",
+    ":PRIVATE_INPUT",
+    "bad rule:PRIVATE_INPUT",
+    "rule:",
+    "rule:/PRIVATE_INPUT",
+    "rule:../PRIVATE_INPUT",
+    "rule:./PRIVATE_INPUT",
+    "rule:dir/../PRIVATE_INPUT",
+    "rule:dir//PRIVATE_INPUT",
+    "rule:PRIVATE_INPUT/",
+    "rule:PRIVATE_INPUT\n",
+    "rule:PRIVATE_INPUT\u202e",
+  ]) {
+    assert.throws(
+      () => parseSecretAllowances([value]),
+      (error: unknown) => {
+        assert.ok(error instanceof SecretScanError);
+        assert.match(error.message, /--allow-secret requires RULE:PATH/);
+        assert.doesNotMatch(error.message, /PRIVATE_INPUT/);
+        return true;
+      },
+    );
+  }
+});
+
+test("allowances match both rule and file exactly across removed, added, and normalized lines", async (t) => {
+  const diff = [
+    "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml",
+    "--- a/pnpm-lock.yaml",
+    "+++ b/pnpm-lock.yaml",
+    "@@ -1 +1 @@",
+    "-PRIVATE_OLD",
+    "+PRIVATE_NEW",
+  ].join("\n");
+  const repo = reportingScanner(t, "generic-password\t5\t6\ngeneric-password\t12\t13\n");
+  const options = { env: repo.env, temporaryDirectory: repo.cwd };
+  await assertNoSecrets(diff, {
+    ...options,
+    allowSecrets: parseSecretAllowances(["generic-password:pnpm-lock.yaml"]),
+  });
+  for (const pair of [
+    "other-rule:pnpm-lock.yaml",
+    "generic-password:other.yaml",
+    "generic-password:PNPM-lock.yaml",
+    "generic-password:*.yaml",
+  ]) {
+    await assert.rejects(
+      assertNoSecrets(diff, {
+        ...options,
+        allowSecrets: parseSecretAllowances([pair]),
+      }),
+      SecretFindingError,
+    );
+  }
+});
+
+test("allowed findings do not hide another rule, file, previous candidate, or patch metadata", async (t) => {
+  const diff = [
+    "diff --git a/old.yaml b/new.yaml",
+    "--- a/old.yaml",
+    "+++ b/new.yaml",
+    "@@ -1 +1 @@",
+    "-PRIVATE_OLD",
+    "+PRIVATE_NEW",
+  ].join("\n");
+  const repo = reportingScanner(
+    t,
+    [
+      "generic-password\t5\t5",
+      "generic-password\t6\t6",
+      "github-pat\t6\t6",
+      "generic-password\t7\t7",
+      "generic-password\t4\t4",
+    ].join("\n") + "\n",
+  );
+  await assert.rejects(
+    assertNoSecrets(diff, {
+      env: repo.env,
+      temporaryDirectory: repo.cwd,
+      previousCandidate: "feat: PRIVATE_CANDIDATE",
+      allowSecrets: parseSecretAllowances(["generic-password:new.yaml"]),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof SecretFindingError);
+      assert.doesNotMatch(error.message, /generic-password — new.yaml/);
+      assert.match(error.message, /generic-password — old.yaml:1/);
+      assert.match(error.message, /github-pat — new.yaml:1/);
+      assert.match(error.message, /previous candidate:1/);
+      assert.match(error.message, /staged diff:4/);
+      assert.doesNotMatch(error.message, /PRIVATE_/);
+      return true;
+    },
+  );
+});
+
+test("exact allowances decode Git quoted UTF-8 bytes and literal quotes and backslashes", async (t) => {
+  const repo = fixture(t);
+  for (const name of ["日本語.txt", 'quote"file.txt', "back\\slash.txt", "space file.txt"]) {
+    const token = "ghp_" + "aB3dE5gH7jK9mN2pQ4sT6vW8xY0zA1bC3dE5";
+    repo.write(name, `${token}\n`);
+    repo.git(["add", "--", name]);
+  }
+  const snapshot = await readStagedSnapshot({ cwd: repo.cwd, env: repo.env });
+  await assertNoSecrets(snapshot.diff, {
+    env: repo.env,
+    temporaryDirectory: repo.cwd,
+    allowSecrets: parseSecretAllowances(
+      snapshot.files.map((file) => `github-pat:${file.toString("utf8")}`),
+    ),
+  });
 });
 
 test("limits displayed locations and explicitly reports omitted entries", async (t) => {

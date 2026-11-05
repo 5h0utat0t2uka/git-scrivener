@@ -4,6 +4,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export class SecretScanError extends Error {}
+export class SecretFindingError extends SecretScanError {}
+
+export interface SecretAllowance {
+  rule: string;
+  path: string;
+}
+
+export function parseSecretAllowances(values: readonly string[]): SecretAllowance[] {
+  return values.map((value) => {
+    const separator = value.indexOf(":");
+    const rule = value.slice(0, separator);
+    const path = value.slice(separator + 1);
+    if (
+      separator < 1 ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(rule) ||
+      /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(path) ||
+      path.split("/").some((part) => part === "" || part === "." || part === "..")
+    ) {
+      throw new SecretScanError(
+        "--allow-secret requires RULE:PATH with an exact repository-relative file path.",
+      );
+    }
+    return { rule, path };
+  });
+}
 
 interface Finding {
   rule: string;
@@ -13,6 +38,7 @@ interface Finding {
 
 interface Location {
   path: string;
+  file: Buffer | undefined;
   line: number;
   kind: string;
 }
@@ -22,8 +48,10 @@ const reportLimit = 256 * 1024;
 const displayLimit = 20;
 
 function parseFindings(report: string, lineCount: number): Finding[] | undefined {
+  // The fixed template terminates every record; a missing terminator may indicate truncation.
+  if (!report.endsWith("\n")) return undefined;
   const findings: Finding[] = [];
-  for (const line of report.trimEnd().split("\n")) {
+  for (const line of report.slice(0, -1).split("\n")) {
     const match = /^([a-zA-Z0-9][a-zA-Z0-9._-]{0,127})\t([0-9]+)\t([0-9]+)$/.exec(line);
     if (!match) return undefined;
     const start = Number(match[2]);
@@ -42,27 +70,56 @@ function parseFindings(report: string, lineCount: number): Finding[] | undefined
   return findings;
 }
 
-function patchPath(header: string, prefix: "a/" | "b/"): string | undefined {
-  // Retain Git's C-style quoting for unusual filename bytes; never interpret escapes.
+function patchPath(
+  header: string,
+  prefix: "a/" | "b/",
+): { path: string; file: Buffer } | undefined {
   let path = header.replace(/\t$/, "");
-  if (path.startsWith(prefix)) path = path.slice(prefix.length);
-  else if (path.startsWith(`"${prefix}`) && path.endsWith('"')) path = `"${path.slice(3)}`;
-  else return undefined;
-  return path.replace(
+  let file: Buffer;
+  if (path.startsWith(prefix)) {
+    path = path.slice(prefix.length);
+    file = Buffer.from(path);
+  } else if (path.startsWith(`"${prefix}`) && path.endsWith('"')) {
+    path = `"${path.slice(3)}`;
+    // Decode Git's byte-oriented C quoting for exact matching, while keeping it for display.
+    const quoted = path.slice(1, -1);
+    const parts = quoted.match(/\\(?:[0-3][0-7]{2}|[abfnrtv\\"])|[^\\]+/g) ?? [];
+    if (parts.join("") !== quoted) return undefined;
+    const escapes: Record<string, string> = {
+      a: "\x07",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+      v: "\v",
+      "\\": "\\",
+      '"': '"',
+    };
+    file = Buffer.concat(
+      parts.map((part) => {
+        if (!part.startsWith("\\")) return Buffer.from(part);
+        if (part.length === 4) return Buffer.from([Number.parseInt(part.slice(1), 8)]);
+        return Buffer.from(escapes[part[1]!]!);
+      }),
+    );
+  } else return undefined;
+  const display = path.replace(
     /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
     (character) => `\\u{${character.codePointAt(0)!.toString(16)}}`,
   );
+  return { path: display, file };
 }
 
 function diffLocations(lines: string[]): Location[] {
-  let oldPath: string | undefined;
-  let newPath: string | undefined;
+  let oldPath: ReturnType<typeof patchPath>;
+  let newPath: ReturnType<typeof patchPath>;
   let oldLine = 0;
   let newLine = 0;
   let oldRemaining = 0;
   let newRemaining = 0;
   return lines.map((line, index) => {
-    const fallback = { path: "staged diff", line: index + 1, kind: "patch line" };
+    const fallback = { path: "staged diff", file: undefined, line: index + 1, kind: "patch line" };
     if (line.startsWith("diff --git ")) {
       oldPath = newPath = undefined;
       oldRemaining = newRemaining = 0;
@@ -71,19 +128,19 @@ function diffLocations(lines: string[]): Location[] {
       if (line.startsWith("-") && oldRemaining > 0) {
         oldRemaining--;
         oldLine++;
-        return oldPath ? { path: oldPath, line: oldLine - 1, kind: "removed, HEAD" } : fallback;
+        return oldPath ? { ...oldPath, line: oldLine - 1, kind: "removed, HEAD" } : fallback;
       }
       if (line.startsWith("+") && newRemaining > 0) {
         newRemaining--;
         newLine++;
-        return newPath ? { path: newPath, line: newLine - 1, kind: "added, staged" } : fallback;
+        return newPath ? { ...newPath, line: newLine - 1, kind: "added, staged" } : fallback;
       }
       if (line.startsWith(" ") && oldRemaining > 0 && newRemaining > 0) {
         oldRemaining--;
         newRemaining--;
         oldLine++;
         newLine++;
-        return newPath ? { path: newPath, line: newLine - 1, kind: "context, staged" } : fallback;
+        return newPath ? { ...newPath, line: newLine - 1, kind: "context, staged" } : fallback;
       }
       if (line.startsWith("\\")) return fallback; // No newline at end of file.
       oldRemaining = newRemaining = 0;
@@ -104,17 +161,21 @@ function diffLocations(lines: string[]): Location[] {
   });
 }
 
-function findingMessage(findings: Finding[], diffLines: string[], previousLines: string[]): string {
+function scanLocations(diffLines: string[], previousLines: string[]): Location[] {
   const patchLocations = diffLocations(diffLines);
-  const locations = [
+  return [
     ...patchLocations,
     ...previousLines.map((_line, index) => ({
       path: "previous candidate",
+      file: undefined,
       line: index + 1,
       kind: "message line",
     })),
     ...patchLocations,
   ];
+}
+
+function findingMessage(findings: Finding[], locations: Location[]): string {
   const groups = new Map<string, { rule: string; location: Location; lines: Set<number> }>();
   for (const finding of findings) {
     for (let index = finding.start - 1; index < finding.end; index++) {
@@ -156,14 +217,17 @@ export async function assertNoSecrets(
     env = process.env,
     temporaryDirectory = tmpdir(),
     previousCandidate = "",
+    allowSecrets = [],
   }: {
     env?: NodeJS.ProcessEnv;
     temporaryDirectory?: string;
     previousCandidate?: string;
+    allowSecrets?: readonly SecretAllowance[];
   } = {},
 ): Promise<void> {
   const diffLines = diff.split("\n");
   const previousLines = previousCandidate.split("\n");
+  const allowances = allowSecrets.map(({ rule, path }) => ({ rule, file: Buffer.from(path) }));
   // Removing patch prefixes also detects multiline secrets. Preserve line counts for diagnostics.
   const normalizedDiff = diffLines.map((line) => line.replace(/^[ +-]/, "")).join("\n");
   const text = [diff, previousCandidate, normalizedDiff].join("\n");
@@ -234,13 +298,27 @@ export async function assertNoSecrets(
                   diffLines.length * 2 + previousLines.length,
                 )
               : undefined;
-          reject(
-            new SecretScanError(
-              findings
-                ? findingMessage(findings, diffLines, previousLines)
-                : `${detectionMessage}\nFinding locations are unavailable because the scanner report was incomplete or invalid.`,
-            ),
+          if (!findings) {
+            reject(
+              new SecretScanError(
+                `${detectionMessage}\nFinding locations are unavailable because the scanner report was incomplete or invalid.`,
+              ),
+            );
+            return;
+          }
+          const locations = scanLocations(diffLines, previousLines);
+          const remaining = findings.filter(
+            (finding) =>
+              !allowances.some(
+                (allowance) =>
+                  allowance.rule === finding.rule &&
+                  locations
+                    .slice(finding.start - 1, finding.end)
+                    .every((location) => location.file?.equals(allowance.file)),
+              ),
           );
+          if (remaining.length === 0) resolve();
+          else reject(new SecretFindingError(findingMessage(remaining, locations)));
         } else if (code !== 0 || signal !== null || inputFailed || reportBytes > 0) {
           reject(
             new SecretScanError(

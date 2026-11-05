@@ -1,5 +1,5 @@
 import { EditorError } from "./edit.ts";
-import { GenerationError } from "./generate.ts";
+import { GenerationAborted, GenerationError } from "./generate.ts";
 import { MessageValidationError, validateCommitMessage } from "./message.ts";
 import { SecretScanError } from "./secrets.ts";
 import { RepositoryError } from "./git.ts";
@@ -34,7 +34,7 @@ export async function reviewCandidate(
         : await actions.regenerate(message);
       message = validateCommitMessage(updated).message;
     } catch (error) {
-      if (error instanceof RepositoryError) throw error;
+      if (error instanceof RepositoryError || error instanceof GenerationAborted) throw error;
       const known =
         error instanceof EditorError ||
         error instanceof GenerationError ||

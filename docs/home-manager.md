@@ -37,6 +37,7 @@ The module installs a wrapper named `git-scrivener`, so invocation remains `git 
 | `provider` | `"openai"` | `"openai"` or `"anthropic"`. |
 | `language` | `"en"` | `"en"` or `"ja"`; affects generated commit messages, not the UI. |
 | `model` | `null` | Use the CLI's default for the selected provider: `gpt-6-luna` for OpenAI or `claude-haiku-5-5` for Anthropic. |
+| `allowSecrets` | `[]` | Allow findings matching exact `RULE:PATH` pairs. Paths are repository-relative. File contents are still sent to the API. |
 
 For OpenAI with English messages, `programs.git-scrivener.enable = true;` alone is sufficient apart from the runtime API key. Set `provider = "anthropic";` to use Haiku 5.5, or also set `model` to select another model. Invalid providers/languages and empty or whitespace-padded model identifiers are rejected during evaluation.
 
@@ -49,6 +50,16 @@ git scrivener --plain
 ```
 
 When changing providers, supply the corresponding runtime API key. If you set an explicit `model` in Home Manager, override it as well when switching providers, as shown above. With `model = null`, the CLI selects the new provider's default automatically. Alternative models must be available to your account and support the provider's API and Structured Outputs. The module forwards arguments unchanged and uses `exec`, preserving the CLI's exit status and terminal input.
+
+To allow a known false positive for one file, configure the rule and path explicitly:
+
+```nix
+programs.git-scrivener.allowSecrets = [
+  "generic-password:pnpm-lock.yaml"
+];
+```
+
+This permits all findings of that rule in that file, including removed lines. The diff is still sent to the selected provider. Paths match exactly from the repository root, including case; glob patterns are not expanded. Home Manager applies these pairs to every repository where you run the command. Use a command-line option instead when an allowance should apply to a single run. Additional `--allow-secret RULE:PATH` options append to the configured list. Uncovered findings prompt for **Abort** or **Continue**, with Abort selected by default.
 
 ## Runtime API keys
 

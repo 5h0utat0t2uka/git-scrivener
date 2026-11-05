@@ -43,9 +43,11 @@ For persistent installation and API key setup, see the [Home Manager guide](docs
 
 ## What gets sent
 
-`git scrivener --check` reports the staged diff size locally. Generation sends the staged diff to the selected provider. Regeneration also sends the previous candidate. Betterleaks scans the outgoing text and blocks the request on a finding or scan error. Review `git diff --cached` for secrets the scanner may miss. The default size limit is 1 MiB.
+`git scrivener --check` reports the staged diff size locally. Generation sends the staged diff to the selected provider. Regeneration also sends the previous candidate. Betterleaks scans the outgoing text. On a finding, **Abort** is selected by default. After reviewing a false positive locally, **Continue** authorizes sending the flagged input once to the displayed provider. Regeneration scans again and prompts again for any unallowed findings. Scan failures and runtime API keys found in the input stop generation. The default size limit is 1 MiB.
 
 When a secret is detected, the error lists the rule ID and location without printing source lines or secret values. Added and context lines refer to staged files, removed lines to HEAD, and regeneration findings may refer to the previous candidate. Unmapped locations use line numbers in the complete staged patch. Inspect locally with `git diff --cached --no-ext-diff --no-textconv --no-color` from the repository root. Working-tree line numbers may differ after partial staging.
+
+To allow a finding for a specific file, use `git scrivener --allow-secret generic-password:pnpm-lock.yaml`. Repeat the option for additional pairs. Rules and repository-relative paths match exactly, including case; glob patterns are not expanded. The option permits every finding of that rule in that file, including added and removed lines; the file's diff is still sent. Previous-candidate and unmapped findings still require review. The default allowance list is empty. Home Manager supports the same pairs through `programs.git-scrivener.allowSecrets`.
 
 OpenAI requests use `store: false`. Data retention depends on the provider and account settings. See [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) and [Anthropic data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention).
 

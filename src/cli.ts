@@ -11,12 +11,13 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_MODEL,
   generateCandidate,
+  GenerationAborted,
   GenerationError,
   requireApiKey,
   resolveGenerationSettings,
 } from "./generate.ts";
 import { assembleCommitMessage, MessageValidationError } from "./message.ts";
-import { SecretScanError } from "./secrets.ts";
+import { parseSecretAllowances, SecretScanError } from "./secrets.ts";
 import { editMessage } from "./edit.ts";
 import { InteractionError, reviewCandidate } from "./review.ts";
 import { commitCandidate, CommitError } from "./commit.ts";
@@ -37,6 +38,7 @@ async function main() {
         language: { type: "string", default: "en" },
         model: { type: "string" },
         "max-diff-bytes": { type: "string", default: String(DEFAULT_MAX_DIFF_BYTES) },
+        "allow-secret": { type: "string", multiple: true },
       },
       allowPositionals: false,
       strict: true,
@@ -60,6 +62,8 @@ Options:
       --model <id>            Model override
                               Defaults: OpenAI=${DEFAULT_MODEL}; Anthropic=${DEFAULT_ANTHROPIC_MODEL}
       --max-diff-bytes <n>    Maximum diff size in bytes (default: ${DEFAULT_MAX_DIFF_BYTES})
+      --allow-secret <rule:path>  Allow a secret finding for one exact repository-relative file
+                                  Repeatable; the file's diff is still sent to the API
 
 Generation sends the inspected diff to the selected provider.
 Set OPENAI_API_KEY for OpenAI or ANTHROPIC_API_KEY for Anthropic at runtime.
@@ -85,6 +89,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
     language: values.language,
     ...(values.model === undefined ? {} : { model: values.model }),
   });
+  const allowSecrets = parseSecretAllowances(values["allow-secret"] ?? []);
   if (!values.check) {
     requireApiKey(settings.provider);
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -103,34 +108,37 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   if (ui === undefined) throw new InteractionError("An interactive terminal is required.");
   const terminal = ui;
   terminal.files(snapshot.files);
-  const candidate = await terminal.progress(
-    "Analyzing staged changes",
-    `Analyzed by ${settings.model}`,
-    async () =>
-      assembleCommitMessage(
-        await generateCandidate(snapshot.diff, {
-          ...settings,
-          maxInputBytes: Number(limit),
-        }),
-      ),
-  );
+  async function generate(previousCandidate?: string) {
+    await assertSnapshotUnchanged(snapshot);
+    return terminal.progress(
+      previousCandidate === undefined ? "Analyzing staged changes" : "Generating another candidate",
+      previousCandidate === undefined ? `Analyzed by ${settings.model}` : "Candidate regenerated",
+      async (pause) =>
+        assembleCommitMessage(
+          await generateCandidate(snapshot.diff, {
+            ...settings,
+            ...(previousCandidate === undefined ? {} : { previousCandidate }),
+            maxInputBytes: Number(limit),
+            allowSecrets,
+            confirmSecrets: (message) =>
+              pause(async () => {
+                terminal.error(message);
+                if (!(await terminal.confirmSecrets(settings.provider)))
+                  throw new GenerationAborted();
+                await assertSnapshotUnchanged(snapshot);
+                return true;
+              }),
+          }),
+        ),
+    );
+  }
+  const candidate = await generate();
   const accepted = await reviewCandidate(candidate, {
     prompt: terminal.prompt,
     display: terminal.display,
     reportError: terminal.error,
     edit: (message) => editMessage(message),
-    regenerate: async (previousCandidate) => {
-      await assertSnapshotUnchanged(snapshot);
-      return terminal.progress("Generating another candidate", "Candidate regenerated", async () =>
-        assembleCommitMessage(
-          await generateCandidate(snapshot.diff, {
-            ...settings,
-            previousCandidate,
-            maxInputBytes: Number(limit),
-          }),
-        ),
-      );
-    },
+    regenerate: generate,
   });
   if (accepted === null) {
     terminal.cancel();
@@ -159,7 +167,7 @@ try {
       ? error.message
       : "An unexpected error occurred.";
   if (ui) {
-    ui.error(message);
+    if (!(error instanceof GenerationAborted)) ui.error(message);
     ui.finish("Stopped.");
   } else console.error(`git-scrivener: ${message}`);
   process.exitCode = 1;

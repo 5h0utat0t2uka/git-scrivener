@@ -17,7 +17,11 @@ let
   ++ lib.optionals (cfg.model != null) [
     "--model"
     cfg.model
-  ];
+  ]
+  ++ lib.concatMap (allowance: [
+    "--allow-secret"
+    allowance
+  ]) cfg.allowSecrets;
 in
 {
   options.programs.git-scrivener = {
@@ -63,6 +67,18 @@ in
         Default model identifier, without surrounding whitespace. Null uses
         the CLI's default model for the selected provider.
         May be overridden with --model.
+      '';
+    };
+
+    allowSecrets = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "generic-password:pnpm-lock.yaml" ];
+      description = ''
+        Secret findings to allow, as RULE:PATH pairs with exact repository-relative
+        file paths. These files are still sent to the selected API provider.
+        Each entry is passed as --allow-secret and validated by the CLI.
+        Additional --allow-secret arguments append to this list.
       '';
     };
   };

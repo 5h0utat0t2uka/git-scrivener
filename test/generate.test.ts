@@ -4,11 +4,12 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_MODEL,
   generateCandidate,
+  GenerationAborted,
   GenerationError,
   resolveGenerationSettings,
 } from "../src/generate.ts";
 import { assembleCommitMessage, validateCommitMessage } from "../src/message.ts";
-import { SecretScanError } from "../src/secrets.ts";
+import { parseSecretAllowances, SecretFindingError, SecretScanError } from "../src/secrets.ts";
 import { fixture } from "./fixture.ts";
 
 const candidate = {
@@ -292,6 +293,8 @@ test("both providers block either runtime key in the diff or previous candidate 
               location === "previousCandidate" ? `fix: ${key}` : "fix: ordinary candidate",
             env: credentials,
             fetch: mock.fetch,
+            confirmSecrets: async () => assert.fail("Runtime API keys cannot be approved"),
+            allowSecrets: parseSecretAllowances(["generic-api-key:file.txt"]),
           }),
           /API key occurs/,
         );
@@ -316,6 +319,7 @@ test("Anthropic blocks oversized input and scanner failures before sending", asy
         env: { ...repo.env, ...credentials, PATH: repo.cwd },
         fetch: mock.fetch,
         temporaryDirectory: repo.cwd,
+        confirmSecrets: async () => assert.fail("Limits and scanner failures cannot be approved"),
       }),
       scenario.error,
     );
@@ -515,6 +519,82 @@ test("both providers scan the previous candidate before regeneration", async (t)
     );
     assert.equal(mock.requests.length, 0);
   }
+});
+
+test(
+  "findings require explicit approval for each request and send only the inspected input",
+  { timeout: 15_000 },
+  async (t) => {
+    const repo = fixture(t, false);
+    const token = "ghp_" + "aB3dE5gH7jK9mN2pQ4sT6vW8xY0zA1bC3dE5";
+    const flagged = `+token = "${token}"\n`;
+    for (const provider of providers) {
+      const mock = transport(provider === "openai" ? response() : anthropicResponse());
+      const options = {
+        provider,
+        env: { ...repo.env, ...credentials },
+        fetch: mock.fetch,
+        temporaryDirectory: repo.cwd,
+        previousCandidate: `feat: replace ${token}`,
+      };
+      await assert.rejects(generateCandidate(flagged, options), SecretFindingError);
+      await assert.rejects(
+        generateCandidate(flagged, {
+          ...options,
+          confirmSecrets: async () => false,
+        }),
+        GenerationAborted,
+      );
+      assert.equal(mock.requests.length, 0);
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const approval = Promise.withResolvers<boolean>();
+        const prompted = Promise.withResolvers<void>();
+        const pending = generateCandidate(flagged, {
+          ...options,
+          confirmSecrets: async (message) => {
+            assert.match(message, /github-pat/);
+            assert.match(message, /previous candidate/);
+            assert.equal(message.includes(token), false);
+            prompted.resolve();
+            return approval.promise;
+          },
+        });
+        t.after(() => approval.resolve(false));
+        await prompted.promise;
+        assert.equal(mock.requests.length, attempt, "do not send while waiting for approval");
+        approval.resolve(true);
+        assert.deepEqual(await pending, candidate);
+        const body = JSON.parse(await mock.requests[attempt]!.text());
+        const input = provider === "openai" ? body.input[0].content : body.messages[0].content;
+        assert.deepEqual(JSON.parse(input), {
+          diff: flagged,
+          previousCandidate: options.previousCandidate,
+        });
+      }
+      await assert.rejects(generateCandidate(flagged, options), SecretFindingError);
+      assert.equal(mock.requests.length, 2, "approval is never remembered");
+    }
+  },
+);
+
+test("a scoped allowance permits a request without prompting and preserves the full diff", async (t) => {
+  const repo = fixture(t);
+  const token = "ghp_" + "aB3dE5gH7jK9mN2pQ4sT6vW8xY0zA1bC3dE5";
+  repo.write("file.txt", `${token}\n`);
+  repo.git(["add", "file.txt"]);
+  const staged = repo.git(["diff", "--cached", "--no-ext-diff", "--no-textconv", "--no-color"]);
+  const mock = transport();
+  await generateCandidate(staged, {
+    env: { ...repo.env, ...credentials },
+    fetch: mock.fetch,
+    temporaryDirectory: repo.cwd,
+    allowSecrets: parseSecretAllowances(["github-pat:file.txt"]),
+    confirmSecrets: async () => assert.fail("All reported findings are explicitly allowed"),
+  });
+  assert.equal(mock.requests.length, 1);
+  const body = JSON.parse(await mock.requests[0]!.text());
+  assert.deepEqual(JSON.parse(body.input[0].content), { diff: staged });
 });
 
 test("fails closed when the scanner cannot run", async (t) => {

@@ -26,6 +26,14 @@ updateSettings({ aliases: { "\x04": "cancel" } });
 
 const stepSymbol = unicodeOr("○", "o");
 
+interface Menu {
+  title: string;
+  initialValue: string;
+  choices: { value: string; label: string; hint?: string }[];
+  plainQuestion: string;
+  showHints?: boolean;
+}
+
 function terminalText(input: Buffer | string): string {
   if (typeof input !== "string" && !isUtf8(input)) {
     return `"${Array.from(input, (byte) => `\\x${byte.toString(16).padStart(2, "0")}`).join("")}"`;
@@ -157,7 +165,7 @@ export function createUi({
     }
   }
 
-  return {
+  const ui = {
     start() {
       if (!plain) output.write("\n");
     },
@@ -233,28 +241,79 @@ export function createUi({
       if (plain) output.write(`${message}\n`);
       else cancel(message, options);
     },
-    async progress<T>(label: string, completed: string, task: () => Promise<T>): Promise<T> {
+    async progress<T>(
+      label: string,
+      completed: string,
+      task: (pause: <R>(interaction: () => Promise<R>) => Promise<R>) => Promise<T>,
+    ): Promise<T> {
       const started = performance.now();
-      const stop = plain ? undefined : startSpinner(label);
+      let pausedFor = 0;
+      let paused = false;
+      let stop = plain ? undefined : startSpinner(label);
       if (plain) output.write(`${label}...\n`);
+      async function pause<R>(interaction: () => Promise<R>): Promise<R> {
+        stop?.();
+        stop = undefined;
+        paused = true;
+        step(`Generation paused after ${elapsed(started + pausedFor)}`, 0);
+        const pauseStarted = performance.now();
+        const result = await interaction();
+        pausedFor += performance.now() - pauseStarted;
+        paused = false;
+        if (plain) output.write(`${label}...\n`);
+        else stop = startSpinner(label);
+        return result;
+      }
       try {
-        const result = await task();
-        const message = `${terminalText(completed)} in ${elapsed(started)}`;
+        const result = await task(pause);
+        const message = `${terminalText(completed)} in ${elapsed(started + pausedFor)}`;
         stop?.();
         step(message, 0);
         return result;
       } catch (error) {
-        const message = `Generation failed after ${elapsed(started)}`;
+        const message = `Generation failed after ${elapsed(started + pausedFor)}`;
         stop?.();
-        if (plain) output.write(`${message}\n`);
-        else
-          log.message(message, { ...options, symbol: styleText("red", S_STEP_ERROR), spacing: 0 });
+        if (!paused) {
+          if (plain) output.write(`${message}\n`);
+          else
+            log.message(message, {
+              ...options,
+              symbol: styleText("red", S_STEP_ERROR),
+              spacing: 0,
+            });
+        }
         throw error;
       } finally {
         stop?.();
       }
     },
-    async prompt(): Promise<string | null> {
+    async confirmSecrets(provider: "openai" | "anthropic"): Promise<boolean> {
+      const providerName = provider === "openai" ? "OpenAI" : "Anthropic";
+      const choice = await ui.prompt({
+        title: 'If false positive, select "Continue" to proceed',
+        initialValue: "abort",
+        choices: [
+          { value: "abort", label: "Abort" },
+          { value: "continue", label: "Continue", hint: `Send to ${providerName}` },
+        ],
+        plainQuestion: `[a]bort / [c]ontinue (Send to ${providerName}; default: abort): `,
+        showHints: true,
+      });
+      return ["c", "continue"].includes(choice?.trim().toLowerCase() ?? "");
+    },
+    async prompt(
+      menu: Menu = {
+        title: "Accept this commit message?",
+        initialValue: "confirm",
+        choices: [
+          { value: "confirm", label: "Confirm", hint: "Create the commit" },
+          { value: "edit", label: "Edit", hint: "Open Git's editor" },
+          { value: "regenerate", label: "Regenerate", hint: "Request another message" },
+          { value: "cancel", label: "Cancel", hint: "Keep staged changes" },
+        ],
+        plainQuestion: "[c]onfirm / [e]dit / [r]egenerate / [q]cancel (default: cancel): ",
+      },
+    ): Promise<string | null> {
       if (input.readableEnded || input.destroyed) return null;
       if (plain) {
         return new Promise((resolve) => {
@@ -271,10 +330,7 @@ export function createUi({
           process.once("SIGINT", interrupt);
           readline.once("SIGINT", interrupt);
           readline.once("close", interrupt);
-          readline.question(
-            "[c]onfirm / [e]dit / [r]egenerate / [q]cancel (default: cancel): ",
-            finish,
-          );
+          readline.question(menu.plainQuestion, finish);
         });
       }
       const controller = new AbortController();
@@ -289,25 +345,15 @@ export function createUi({
           output,
           input,
           signal: controller.signal,
-          initialValue: "confirm",
-          options: [
-            { value: "confirm", label: "Confirm", hint: "Create the commit" },
-            { value: "edit", label: "Edit", hint: "Open Git's editor" },
-            { value: "regenerate", label: "Regenerate", hint: "Request another message" },
-            { value: "cancel", label: "Cancel", hint: "Keep staged changes" },
-          ],
+          initialValue: menu.initialValue,
+          options: menu.choices,
           render() {
             const guide = styleText("gray", S_BAR);
             const prefix = `${guide}  `;
             const color = this.state === "cancel" ? "red" : "green";
             const title = `${guide}\n${styleText(
               color,
-              wrapTextWithPrefix(
-                output,
-                "Accept this commit message?",
-                `${S_BAR}  `,
-                `${stepSymbol}  `,
-              ),
+              wrapTextWithPrefix(output, menu.title, `${S_BAR}  `, `${stepSymbol}  `),
             )}\n`;
             if (this.state === "submit" || this.state === "cancel") {
               const label =
@@ -326,10 +372,15 @@ export function createUi({
               cursor: this.cursor,
               columnPadding: 3,
               rowPadding: title.split("\n").length + footer.length,
-              style: (option, active) =>
-                active
-                  ? `${styleText("green", S_RADIO_ACTIVE)} ${option.label} ${styleText("dim", `(${option.hint})`)}`
-                  : styleText("dim", `${S_RADIO_INACTIVE} ${option.label}`),
+              style: (option, active) => {
+                const hint =
+                  option.hint && (active || menu.showHints)
+                    ? ` ${styleText("dim", `(${option.hint})`)}`
+                    : "";
+                return active
+                  ? `${styleText("green", S_RADIO_ACTIVE)} ${option.label}${hint}`
+                  : styleText("dim", `${S_RADIO_INACTIVE} ${option.label}${hint}`);
+              },
             });
             return `${title}${prefix}${choices.join(`\n${prefix}`)}\n${footer.join("\n")}`;
           },
@@ -343,4 +394,5 @@ export function createUi({
       }
     },
   };
+  return ui;
 }

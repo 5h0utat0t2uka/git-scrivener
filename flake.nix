@@ -56,7 +56,13 @@
         pnpm = pkgs.pnpm_12.override { nodejs-slim = pkgs.nodejs-slim_26; };
         scrivener = import ./nix/package.nix { inherit pkgs nodejs pnpm; };
         preCommit = import ./nix/pre-commit.nix {
-          inherit pkgs git-hooks system nodejs pnpm;
+          inherit
+            pkgs
+            git-hooks
+            system
+            nodejs
+            pnpm
+            ;
           src = ./.;
         };
         agentLib = agent-skills.lib.agent-skills;

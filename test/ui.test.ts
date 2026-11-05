@@ -6,6 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { createUi } from "../src/ui.ts";
+import { GenerationAborted } from "../src/generate.ts";
 
 function terminal(t: TestContext, plain = false) {
   let text = "";
@@ -103,6 +104,107 @@ test(
       assert.equal(await result, answer);
       assert.equal(view.modes.length, 0);
       assert.equal(view.text().includes("\x1b"), false);
+    }
+  },
+);
+
+test(
+  "secret review defaults to Abort and shows the provider before Continue is selected",
+  { timeout: 5_000 },
+  async (t) => {
+    for (const provider of ["openai", "anthropic"] as const) {
+      for (const keys of ["\r", "\x1b[B\r", "\x03", "\x04", "\x1b", null]) {
+        const view = terminal(t);
+        const result = view.ui.confirmSecrets(provider);
+        const initial = stripVTControlCharacters(view.text());
+        assert.match(initial, /● Abort/);
+        assert.ok(
+          initial.includes(
+            `○ Continue (Send to ${provider === "openai" ? "OpenAI" : "Anthropic"})`,
+          ),
+        );
+        if (keys === null) view.input.end();
+        else view.input.write(keys);
+        assert.equal(await result, keys === "\x1b[B\r");
+        assert.equal(view.input.isRaw, false);
+        assert.equal(view.input.listenerCount("keypress"), 0);
+      }
+    }
+  },
+);
+
+test(
+  "plain secret review accepts only an explicit continue and otherwise aborts",
+  { timeout: 5_000 },
+  async (t) => {
+    for (const answer of ["", "a", "abort", "c", "continue", " CONTINUE ", "yes", null]) {
+      const view = terminal(t, true);
+      const result = view.ui.confirmSecrets("anthropic");
+      assert.match(view.text(), /Send to Anthropic; default: abort/);
+      if (answer === null) view.input.end();
+      else view.input.write(`${answer}\n`);
+      assert.equal(await result, ["c", "continue"].includes(answer?.trim().toLowerCase() ?? ""));
+      assert.equal(view.modes.length, 0);
+      assert.equal(view.text().includes("\x1b"), false);
+    }
+  },
+);
+
+test(
+  "progress pauses for secret review, excludes user wait time, and cleans up on Abort or Continue",
+  { timeout: 5_000 },
+  async (t) => {
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    let clock = 0;
+    t.mock.method(performance, "now", () => clock);
+    const signals = ["SIGINT", "SIGTERM", "exit"] as const;
+    const listeners = signals.map((signal) => process.listenerCount(signal));
+    for (const proceed of [false, true]) {
+      clock = 0;
+      const view = terminal(t);
+      const pending = view.ui.progress(
+        "Analyzing staged changes",
+        "Analyzed by model",
+        async (pause) => {
+          clock = 1_000;
+          await pause(async () => {
+            if (!(await view.ui.confirmSecrets("openai"))) throw new GenerationAborted();
+          });
+          clock += 2_000;
+          return "candidate";
+        },
+      );
+      const pausedOutput = view.text();
+      t.mock.timers.tick(800);
+      clock += 10_000;
+      assert.equal(view.text(), pausedOutput, "spinner must not overwrite the menu");
+      assert.equal(
+        view.output.listenerCount("resize"),
+        1,
+        "only the menu owns resize while paused",
+      );
+      assert.match(stripVTControlCharacters(pausedOutput), /Generation paused after 1\.0s/);
+      view.input.write(proceed ? "\x1b[B\r" : "\r");
+      if (proceed) {
+        assert.equal(await pending, "candidate");
+        assert.match(stripVTControlCharacters(view.text()), /Analyzed by model in 3\.0s/);
+      } else {
+        await assert.rejects(pending, GenerationAborted);
+        assert.doesNotMatch(
+          stripVTControlCharacters(view.text()),
+          /Analyzed by model|Generation failed/,
+        );
+      }
+      const finalOutput = view.text();
+      t.mock.timers.tick(800);
+      assert.equal(view.text(), finalOutput);
+      assert.equal(view.input.isRaw, false);
+      assert.equal(view.input.listenerCount("keypress"), 0);
+      assert.equal(view.output.listenerCount("resize"), 0);
+      assert.deepEqual(
+        signals.map((signal) => process.listenerCount(signal)),
+        listeners,
+      );
     }
   },
 );

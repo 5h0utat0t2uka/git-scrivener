@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EditorError } from "../src/edit.ts";
-import { GenerationError } from "../src/generate.ts";
+import { GenerationAborted, GenerationError } from "../src/generate.ts";
 import { reviewCandidate } from "../src/review.ts";
 
 function actions(choices: (string | null)[]) {
@@ -80,6 +80,20 @@ test("a regeneration failure preserves the current candidate and still requires 
   };
   assert.equal(await reviewCandidate("feat: original", ui), "feat: original");
   assert.match(ui.errors.join("\n"), /previous candidate is retained/);
+});
+
+test("aborting the secret review during regeneration stops instead of offering the old candidate", async () => {
+  const choices = ["regenerate", "confirm"];
+  const ui = {
+    ...actions(choices),
+    regenerate: async () => {
+      throw new GenerationAborted();
+    },
+  };
+  await assert.rejects(reviewCandidate("feat: original", ui), GenerationAborted);
+  assert.deepEqual(choices, ["confirm"]);
+  assert.deepEqual(ui.displayed, ["feat: original"]);
+  assert.deepEqual(ui.errors, []);
 });
 
 test("invalid actions do not confirm and unexpected errors are not echoed", async () => {

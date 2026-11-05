@@ -1,4 +1,8 @@
-{ pkgs, nodejs, pnpm }:
+{
+  pkgs,
+  nodejs,
+  pnpm,
+}:
 
 let
   inherit (pkgs) lib;

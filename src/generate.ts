@@ -1,12 +1,14 @@
 import type { CommitCandidate } from "./candidate.ts";
 import { DEFAULT_MAX_DIFF_BYTES } from "./git.ts";
-import { assertNoSecrets } from "./secrets.ts";
+import { assertNoSecrets, SecretFindingError } from "./secrets.ts";
+import type { SecretAllowance } from "./secrets.ts";
 
 export const DEFAULT_MODEL = "gpt-6-luna";
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5";
 
 export type { CommitCandidate } from "./candidate.ts";
 export class GenerationError extends Error {}
+export class GenerationAborted extends Error {}
 
 interface GenerationSettings {
   provider: "openai" | "anthropic";
@@ -65,6 +67,8 @@ interface GenerationOptions extends Partial<GenerationSettings> {
   maxInputBytes?: number;
   temporaryDirectory?: string;
   fetch?: typeof globalThis.fetch;
+  allowSecrets?: readonly SecretAllowance[];
+  confirmSecrets?: (message: string) => Promise<boolean>;
 }
 
 export async function generateCandidate(
@@ -101,11 +105,17 @@ export async function generateCandidate(
   ) {
     throw new GenerationError("The API key occurs in the data to send. No request was made.");
   }
-  await assertNoSecrets(diff, {
-    env,
-    ...(previousCandidate === undefined ? {} : { previousCandidate }),
-    ...(temporaryDirectory === undefined ? {} : { temporaryDirectory }),
-  });
+  try {
+    await assertNoSecrets(diff, {
+      env,
+      ...(previousCandidate === undefined ? {} : { previousCandidate }),
+      ...(temporaryDirectory === undefined ? {} : { temporaryDirectory }),
+      ...(options.allowSecrets === undefined ? {} : { allowSecrets: options.allowSecrets }),
+    });
+  } catch (error) {
+    if (!(error instanceof SecretFindingError) || !options.confirmSecrets) throw error;
+    if ((await options.confirmSecrets(error.message)) !== true) throw new GenerationAborted();
+  }
 
   const providerName = provider === "openai" ? "OpenAI" : "Anthropic";
   const instructions = generationInstructions(language);

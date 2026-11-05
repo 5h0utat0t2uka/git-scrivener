@@ -15,6 +15,7 @@ let
         provider: { type: 'string' },
         language: { type: 'string' },
         model: { type: 'string' },
+        'allow-secret': { type: 'string', multiple: true },
         'exit-code': { type: 'string', default: '0' },
       },
     });
@@ -65,6 +66,10 @@ let
   japanese = enabled {
     language = "ja";
     model = "test-model'$(touch unexpected)";
+    allowSecrets = [
+      "generic-password:pnpm-lock.yaml"
+      "github-pat:literal'$(touch unexpected).txt"
+    ];
   };
   anthropic = enabled {
     provider = "anthropic";
@@ -124,6 +129,7 @@ pkgs.runCommand "git-scrivener-home-manager-test" { nativeBuildInputs = [ nodejs
   assert.deepEqual(read('japanese'), {
     provider: 'openai', language: 'ja', model: "test-model'$(touch unexpected)",
     'exit-code': '0', openaiKey: false, anthropicKey: false,
+    'allow-secret': ['generic-password:pnpm-lock.yaml', "github-pat:literal'$(touch unexpected).txt"],
   });
   assert.deepEqual(read('anthropic'), {
     provider: 'anthropic', language: 'en', model: 'claude-test-model',
@@ -136,6 +142,7 @@ pkgs.runCommand "git-scrivener-home-manager-test" { nativeBuildInputs = [ nodejs
   assert.deepEqual(read('overridden'), {
     provider: 'anthropic', language: 'en', model: 'override-model',
     'exit-code': '0', openaiKey: true, anthropicKey: true,
+    'allow-secret': ['generic-password:pnpm-lock.yaml', "github-pat:literal'$(touch unexpected).txt"],
   });
   JS
   touch "$out"
