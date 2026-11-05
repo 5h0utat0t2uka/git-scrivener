@@ -105,7 +105,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   terminal.files(snapshot.files);
   const candidate = await terminal.progress(
     "Analyzing staged changes",
-    `${settings.model} analyzed`,
+    `Analyzed by ${settings.model}`,
     async () =>
       assembleCommitMessage(
         await generateCandidate(snapshot.diff, {

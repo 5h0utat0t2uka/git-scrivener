@@ -55,10 +55,19 @@ export function createUi({
   const options = { output, withGuide: true };
   const elapsed = (start: number) => `${((performance.now() - start) / 1_000).toFixed(1)}s`;
 
+  function wrappedRows(message: string) {
+    const prefix = `${S_BAR}  `;
+    if (getColumns(output) < prefix.length + 2) return undefined;
+    // Reserve the guide's width. log.message adds the colored guide to each row.
+    return wrapTextWithPrefix(output, message, prefix)
+      .split("\n")
+      .map((line) => line.slice(prefix.length));
+  }
+
   function step(message: string, spacing = 1) {
     if (plain) output.write(`${message}\n`);
     else {
-      log.message(message, {
+      log.message(wrappedRows(message) ?? message, {
         ...options,
         symbol: styleText("green", stepSymbol),
         spacing,
@@ -153,21 +162,17 @@ export function createUi({
       if (!plain) output.write("\n");
     },
     files(paths: readonly Buffer[]) {
-      const title = `👀 Detected ${paths.length} staged ${paths.length === 1 ? "file" : "files"}:`;
-      const names = paths.map((path) => `   ${terminalText(path)}`).join("\n");
-      if (plain) output.write(`${title}\n${names}\n`);
-      else step(`${title}\n${styleText("dim", names)}`, 0);
+      const title = `Detected ${paths.length} staged ${paths.length === 1 ? "file" : "files"}`;
+      const names = paths.map((path) => {
+        const name = terminalText(path);
+        return plain ? name : styleText("dim", name);
+      });
+      step([title, ...names].join("\n"), 0);
     },
     display(message: string) {
-      const prefix = `${S_BAR}  `;
-      if (plain || getColumns(output) < prefix.length + 2) {
-        output.write(`\n${message}\n\n`);
-        return;
-      }
-      const wrapped = wrapTextWithPrefix(output, message.replaceAll("\t", "    "), prefix);
-      // Measure the unstyled prefix above; log.message adds its own colored guide to each row.
-      const rows = wrapped.split("\n").map((line) => line.slice(prefix.length));
-      log.message(rows, options);
+      const rows = plain ? undefined : wrappedRows(message.replaceAll("\t", "    "));
+      if (rows) log.message(rows, options);
+      else output.write(`\n${message}\n\n`);
     },
     error(message: string) {
       if (plain) errorOutput.write(`${message}\n`);

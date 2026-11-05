@@ -59,7 +59,10 @@ for (const provider of ["openai", "anthropic"] as const) {
           };
         }[];
         assert.equal(requests.length, action === "r" ? 2 : 1);
-        assert.ok(result.stdout.includes(`${requests[0]!.body.model} analyzed in `), result.stdout);
+        assert.ok(
+          result.stdout.includes(`Analyzed by ${requests[0]!.body.model} in `),
+          result.stdout,
+        );
         for (const request of requests) {
           assert.equal(
             request.body.model,

@@ -114,7 +114,7 @@ test("file listings preserve Unicode and escape unsafe filename bytes", (t) => {
     Buffer.from("newline\n\x1b[2J\u202efile.txt"),
     Buffer.from([0xff, 0x1b]),
   ]);
-  assert.match(view.text(), /Detected 3 staged files:/);
+  assert.match(view.text(), /^Detected 3 staged files\n/);
   assert.match(view.text(), /src\/日本語\.ts/);
   assert.ok(view.text().includes('"newline\\n\\u001b[2J\\u{202e}file.txt"'));
   assert.ok(view.text().includes('"\\xff\\x1b"'));
@@ -141,11 +141,29 @@ test("timeline markers decorate steps without changing file names or candidate t
   const text = stripVTControlCharacters(view.text());
   assert.match(
     text,
-    /^\n○  👀 Detected 3 staged files:\n│     README◇\.md\n│     src\/ui\.ts\n│     test\/ui\.test\.ts\n/,
+    /^\n○  Detected 3 staged files\n│  README◇\.md\n│  src\/ui\.ts\n│  test\/ui\.test\.ts\n/,
   );
   assert.match(text, /○  Candidate regenerated in \d+\.\ds\n/);
   assert.match(text, /│\n│  docs: describe ◇ and ❯ symbols\n│\n│  Keep their literal contents\.\n/);
   assert.match(text, /│\n○  Committing with Git\n└  Cancelled\. No commit was created\.\n/);
+});
+
+test("wrapped file names and analysis results align with the timeline text", async (t) => {
+  const view = terminal(t);
+  view.output.columns = 25;
+  view.ui.files([Buffer.from("日本語日本語日本語日本語.md")]);
+  assert.equal(
+    stripVTControlCharacters(view.text()),
+    "○  Detected 1 staged file\n│  日本語日本語日本語日本\n│  語.md\n",
+  );
+
+  const model = "a".repeat(30);
+  await view.ui.progress("Analyzing staged changes", `Analyzed by ${model}`, async () => undefined);
+  const lines = stripVTControlCharacters(view.chunks.at(-1)!).trimEnd().split("\n");
+  assert.ok(lines[0]!.startsWith("○  Analyzed by"));
+  assert.ok(lines.slice(1).every((line) => line.startsWith("│  ")));
+  assert.ok(lines.every((line) => line.length <= view.output.columns));
+  assert.match(lines.map((line) => line.slice(3)).join(""), /^Analyzed by a{30} in \d+\.\ds$/);
 });
 
 test("candidate preview keeps wrapped rows aligned at the current terminal width", (t) => {
@@ -354,10 +372,14 @@ test("plain progress and output contain no cursor commands or ANSI styling", asy
   view.ui.start();
   view.ui.files([Buffer.from("README.md")]);
   view.ui.display("feat: add documentation");
-  await view.ui.progress("Analyzing staged changes", "Changes analyzed", async () => undefined);
+  await view.ui.progress(
+    "Analyzing staged changes",
+    "Analyzed by gpt-6-luna",
+    async () => undefined,
+  );
   view.ui.cancel();
-  assert.match(view.text(), /^👀 Detected 1 staged file:/);
-  assert.match(view.text(), /Changes analyzed in \d+\.\ds/);
+  assert.match(view.text(), /^Detected 1 staged file\nREADME\.md\n/);
+  assert.match(view.text(), /Analyzed by gpt-6-luna in \d+\.\ds/);
   assert.match(view.text(), /Cancelled\. No commit was created\./);
   assert.equal(view.text().includes("\x1b"), false);
   assert.doesNotMatch(view.text(), /[○❯⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
