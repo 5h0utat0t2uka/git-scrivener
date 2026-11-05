@@ -13,8 +13,9 @@
 
 Generate a [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) message from staged Git changes. Review it in your terminal and commit using your existing Git hooks and signing settings.
 
-![Terminal session reviewing a generated commit message](./docs/ss0.png)
-![Terminal session reviewing a generated commit message](./docs/ss1.png)
+![Terminal session reviewing a generated commit message](./docs/ss0.png)  
+
+![Terminal session reviewing a generated commit message](./docs/ss1.png)  
 
 ## Quick start
 
