@@ -14,7 +14,6 @@ import {
   S_RADIO_INACTIVE,
   S_STEP_ERROR,
   SELECT_INSTRUCTIONS,
-  cancel,
   formatInstructionFooter,
   isCancel,
   limitOptions,
@@ -127,14 +126,14 @@ export function createUi({
 
     function interrupt() {
       stop();
-      cancel("Cancelled. No commit was created.", options);
+      ui.cancel();
       // Stop the pending task as well as the animation.
       process.exit(130);
     }
 
     function terminate() {
       stop();
-      cancel("Cancelled. No commit was created.", options);
+      ui.cancel();
       process.exit(143);
     }
 
@@ -239,9 +238,7 @@ export function createUi({
       }
     },
     cancel() {
-      const message = "Cancelled. No commit was created.";
-      if (plain) output.write(`${message}\n`);
-      else cancel(message, options);
+      ui.finish("No commit was created.", true);
     },
     async progress<T>(
       label: string,
@@ -299,8 +296,6 @@ export function createUi({
       if (input.readableEnded || input.destroyed) return null;
       const providerName = provider === "openai" ? "OpenAI" : "Anthropic";
       const title = `${providerName} API key (input hidden)`;
-      const controller = new AbortController();
-      const interrupt = () => controller.abort();
       const wasRaw = terminalInput.isRaw ?? false;
       const wasFlowing = input.readableFlowing === true;
       // Clack still handles editing in plain mode, but none of its cursor commands are emitted.
@@ -311,36 +306,41 @@ export function createUi({
             },
           })
         : undefined;
+      const prompt = new PasswordPrompt({
+        input,
+        output: muted ?? output,
+        mask: "",
+        render() {
+          if (plain) return "";
+          const guide = styleText("gray", S_BAR);
+          const heading = wrapTextWithPrefix(
+            output,
+            title,
+            `${guide}  `,
+            `${styleText("green", stepSymbol)}  `,
+          );
+          const status =
+            this.state === "cancel" || (this.state === "submit" && !this.value?.trim())
+              ? "Cancelled"
+              : this.state === "submit"
+                ? "Provided for this run"
+                : "Enter a key, or press Enter without input to cancel.";
+          // Never render userInput, value, or even the length of the credential.
+          return `${guide}\n${heading}\n${wrapTextWithPrefix(output, styleText("dim", status), `${guide}  `)}`;
+        },
+      });
+      const interrupt = () => {
+        if (prompt.state === "submit" || prompt.state === "cancel") return;
+        // Use the normal cancellation path: Clack's AbortSignal path skips the final render.
+        input.emit("keypress", "\x03", { name: "c", sequence: "\x03", ctrl: true });
+      };
       input.once("end", interrupt);
       input.once("close", interrupt);
       process.once("SIGINT", interrupt);
       process.once("SIGTERM", interrupt);
       try {
         if (plain) output.write(`${title}: `);
-        const value = await new PasswordPrompt({
-          input,
-          output: muted ?? output,
-          signal: controller.signal,
-          mask: "",
-          render() {
-            if (plain) return "";
-            const guide = styleText("gray", S_BAR);
-            const heading = wrapTextWithPrefix(
-              output,
-              title,
-              `${guide}  `,
-              `${styleText("green", stepSymbol)}  `,
-            );
-            const status =
-              this.state === "cancel" || (this.state === "submit" && !this.value?.trim())
-                ? "Cancelled"
-                : this.state === "submit"
-                  ? "Provided for this run"
-                  : "Enter a key, or press Enter without input to cancel.";
-            // Never render userInput, value, or even the length of the credential.
-            return `${guide}\n${heading}\n${wrapTextWithPrefix(output, styleText("dim", status), `${guide}  `)}`;
-          },
-        }).prompt();
+        const value = await prompt.prompt();
         return isCancel(value) || !value?.trim() ? null : value.trim();
       } finally {
         input.off("end", interrupt);
@@ -400,58 +400,60 @@ export function createUi({
           readline.question(menu.plainQuestion, finish);
         });
       }
-      const controller = new AbortController();
-      const interrupt = () => controller.abort();
+      // Keep Clack's input handling and customize only the rendered timeline.
+      const prompt = new SelectPrompt({
+        output,
+        input,
+        initialValue: menu.initialValue,
+        options: menu.choices,
+        render() {
+          const guide = styleText("gray", S_BAR);
+          const prefix = `${guide}  `;
+          const color = this.state === "cancel" ? "red" : "green";
+          const title = `${guide}\n${styleText(
+            color,
+            wrapTextWithPrefix(output, menu.title, `${S_BAR}  `, `${stepSymbol}  `),
+          )}\n`;
+          if (this.state === "submit" || this.state === "cancel") {
+            const label = this.state === "cancel" ? "Cancelled" : this.options[this.cursor]!.label;
+            return `${title}${wrapTextWithPrefix(output, styleText("dim", label), prefix)}`;
+          }
+          const footer = [
+            ...formatInstructionFooter(SELECT_INSTRUCTIONS, false).map(
+              (line) => `${prefix}${line}`,
+            ),
+            guide,
+          ];
+          const choices = limitOptions({
+            output,
+            options: this.options,
+            cursor: this.cursor,
+            columnPadding: 3,
+            rowPadding: title.split("\n").length + footer.length,
+            style: (option, active) => {
+              const hint =
+                option.hint && (active || menu.showHints)
+                  ? ` ${styleText("dim", `(${option.hint})`)}`
+                  : "";
+              return active
+                ? `${styleText("green", S_RADIO_ACTIVE)} ${option.label}${hint}`
+                : styleText("dim", `${S_RADIO_INACTIVE} ${option.label}${hint}`);
+            },
+          });
+          return `${title}${prefix}${choices.join(`\n${prefix}`)}\n${footer.join("\n")}`;
+        },
+      });
+      const interrupt = () => {
+        if (prompt.state === "submit" || prompt.state === "cancel") return;
+        // Match keyboard cancellation, including its final render and terminal cleanup.
+        input.emit("keypress", "\x03", { name: "c", sequence: "\x03", ctrl: true });
+      };
       input.once("end", interrupt);
       input.once("close", interrupt);
       process.once("SIGINT", interrupt);
       process.once("SIGTERM", interrupt);
       try {
-        // Keep Clack's input handling and customize only the rendered timeline.
-        const choice = await new SelectPrompt({
-          output,
-          input,
-          signal: controller.signal,
-          initialValue: menu.initialValue,
-          options: menu.choices,
-          render() {
-            const guide = styleText("gray", S_BAR);
-            const prefix = `${guide}  `;
-            const color = this.state === "cancel" ? "red" : "green";
-            const title = `${guide}\n${styleText(
-              color,
-              wrapTextWithPrefix(output, menu.title, `${S_BAR}  `, `${stepSymbol}  `),
-            )}\n`;
-            if (this.state === "submit" || this.state === "cancel") {
-              const label =
-                this.state === "cancel" ? "Cancelled" : this.options[this.cursor]!.label;
-              return `${title}${wrapTextWithPrefix(output, styleText("dim", label), prefix)}`;
-            }
-            const footer = [
-              ...formatInstructionFooter(SELECT_INSTRUCTIONS, false).map(
-                (line) => `${prefix}${line}`,
-              ),
-              guide,
-            ];
-            const choices = limitOptions({
-              output,
-              options: this.options,
-              cursor: this.cursor,
-              columnPadding: 3,
-              rowPadding: title.split("\n").length + footer.length,
-              style: (option, active) => {
-                const hint =
-                  option.hint && (active || menu.showHints)
-                    ? ` ${styleText("dim", `(${option.hint})`)}`
-                    : "";
-                return active
-                  ? `${styleText("green", S_RADIO_ACTIVE)} ${option.label}${hint}`
-                  : styleText("dim", `${S_RADIO_INACTIVE} ${option.label}${hint}`);
-              },
-            });
-            return `${title}${prefix}${choices.join(`\n${prefix}`)}\n${footer.join("\n")}`;
-          },
-        }).prompt();
+        const choice = await prompt.prompt();
         return isCancel(choice) ? null : (choice ?? null);
       } finally {
         input.off("end", interrupt);

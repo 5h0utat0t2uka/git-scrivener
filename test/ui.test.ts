@@ -87,6 +87,13 @@ test(
       if (key === null) view.input.end();
       else view.input.write(key);
       assert.equal(await result, null);
+      view.ui.cancel();
+      const ending = "│  Cancelled\n│\n○  No commit was created.\n\n";
+      assert.equal(
+        stripVTControlCharacters(view.text()).slice(-ending.length),
+        ending,
+        `cancellation ending for ${JSON.stringify(key ?? "EOF")}`,
+      );
       assert.equal(view.modes.at(-1), false);
       assert.equal(view.input.listenerCount("keypress"), 0);
     }
@@ -186,6 +193,15 @@ test(
         }
         assert.equal(await result, null);
         assert.doesNotMatch(view.text(), /test-partial-key/);
+        view.ui.cancel();
+        if (!plain) {
+          const ending = "│  Cancelled\n│\n○  No commit was created.\n\n";
+          assert.equal(
+            stripVTControlCharacters(view.text()).slice(-ending.length),
+            ending,
+            `API key cancellation ending for ${JSON.stringify(action)}`,
+          );
+        }
         assert.equal(view.input.isRaw, false);
         assert.equal(view.input.listenerCount("keypress"), 0);
         assert.equal(view.output.listenerCount("resize"), 0);
@@ -325,7 +341,7 @@ test("timeline markers decorate steps without changing file names or candidate t
   );
   assert.match(text, /○  Candidate regenerated in \d+\.\ds\n/);
   assert.match(text, /│\n│  docs: describe ◇ and ❯ symbols\n│\n│  Keep their literal contents\.\n/);
-  assert.match(text, /│\n○  Committing with Git\n└  Cancelled\. No commit was created\.\n/);
+  assert.match(text, /│\n○  Committing with Git\n│\n○  No commit was created\.\n\n/);
 });
 
 test("wrapped file names and analysis results align with the timeline text", async (t) => {
@@ -491,7 +507,7 @@ setImmediate(() => { ${action}; });
     });
     assert.ifError(child.error);
     assert.equal(child.status, expectedCode, `${action}: ${child.stderr}`);
-    assert.match(child.stdout, /Cancelled\. No commit was created\./);
+    assert.match(stripVTControlCharacters(child.stdout), /│\n○  No commit was created\./);
     assert.ok(child.stdout.includes("\x1b[?25h"));
     assert.ok(child.stdout.includes('CLEANUP:{"raw":false,"keys":0,"resize":0,"paused":true}'));
     assert.doesNotMatch(child.stdout, /Changes analyzed in/);
@@ -570,7 +586,7 @@ test("plain progress and output contain no cursor commands or ANSI styling", asy
   view.ui.cancel();
   assert.match(view.text(), /^Detected 1 staged file\nREADME\.md\n/);
   assert.match(view.text(), /Analyzed by gpt-6-luna in \d+\.\ds/);
-  assert.match(view.text(), /Cancelled\. No commit was created\./);
+  assert.match(view.text(), /No commit was created\./);
   assert.equal(view.text().includes("\x1b"), false);
   assert.doesNotMatch(view.text(), /[○❯⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 });

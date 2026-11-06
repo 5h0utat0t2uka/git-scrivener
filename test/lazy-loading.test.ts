@@ -104,7 +104,7 @@ for (const provider of ["openai", "anthropic"] as const) {
       assert.ifError(result.error);
       assert.equal(result.status, scenario === "generate" ? 0 : 1, result.stdout + result.stderr);
       assertLoaded(loadedModules(log), scenario === "secret" ? undefined : provider);
-      if (scenario === "generate") assert.match(result.stdout, /Cancelled/);
+      if (scenario === "generate") assert.match(result.stdout, /No commit was created/);
       if (scenario === "http-error") assert.match(result.stdout + result.stderr, /HTTP 401/);
       if (scenario === "secret") {
         const output = result.stdout + result.stderr;

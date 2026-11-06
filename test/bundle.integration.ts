@@ -88,7 +88,7 @@ for (const provider of ["openai", "anthropic"] as const) {
           assert.equal(repo.git(["log", "-1", "--format=%B"]).trim(), subject);
           assert.equal(repo.git(["show", "HEAD:file.txt"]), "staged content\n");
         } else {
-          assert.match(result.stdout, /Cancelled\. No commit was created/);
+          assert.match(result.stdout, /No commit was created/);
           repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
           if (action === "r") assert.match(result.stdout, /Regenerated candidate\./);
         }
