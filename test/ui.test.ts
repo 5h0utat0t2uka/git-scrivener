@@ -7,6 +7,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { createUi } from "../src/ui.ts";
 import { GenerationAborted } from "../src/generate.ts";
+import { InteractionError } from "../src/review.ts";
 
 function terminal(t: TestContext, plain = false) {
   let text = "";
@@ -132,6 +133,83 @@ test(
     }
   },
 );
+
+test(
+  "API key input stays hidden during editing and after submission in both display modes",
+  { timeout: 5_000 },
+  async (t) => {
+    for (const plain of [false, true]) {
+      for (const provider of ["openai", "anthropic"] as const) {
+        const view = terminal(t, plain);
+        const result = view.ui.apiKey(provider);
+        assert.equal(view.input.isRaw, true);
+        assert.ok(
+          view
+            .text()
+            .includes(`${provider === "openai" ? "OpenAI" : "Anthropic"} API key (input hidden)`),
+        );
+        const initial = view.text();
+        view.input.write("discard-this-value");
+        view.input.write("\x15"); // Clear the line, then edit a typo with Backspace.
+        view.input.write("  test-private-keyx\x7f  ");
+        assert.equal(view.text(), initial, "no key or key length is rendered while editing");
+        view.input.write("\r");
+        assert.equal(await result, "test-private-key");
+        assert.doesNotMatch(view.text(), /test-private-key|discard-this-value/);
+        if (plain) assert.equal(view.text().includes("\x1b"), false);
+        assert.equal(view.input.isRaw, false);
+        assert.equal(view.input.isPaused(), true);
+        assert.equal(view.input.listenerCount("keypress"), 0);
+        assert.equal(view.output.listenerCount("resize"), 0);
+      }
+    }
+  },
+);
+
+test(
+  "empty input, cancellation, EOF, and signals never return a partially entered API key",
+  { timeout: 5_000 },
+  async (t) => {
+    const signals = ["SIGINT", "SIGTERM"] as const;
+    const before = signals.map((signal) => process.listenerCount(signal));
+    for (const plain of [false, true]) {
+      for (const action of ["empty", "whitespace", "\x03", "\x04", "\x1b", "eof", ...signals]) {
+        const view = terminal(t, plain);
+        const result = view.ui.apiKey("openai");
+        if (action === "empty") view.input.write("\r");
+        else if (action === "whitespace") view.input.write("   \r");
+        else {
+          view.input.write("test-partial-key");
+          if (action === "eof") view.input.end();
+          else if (action === "SIGINT" || action === "SIGTERM") process.emit(action);
+          else view.input.write(action);
+        }
+        assert.equal(await result, null);
+        assert.doesNotMatch(view.text(), /test-partial-key/);
+        assert.equal(view.input.isRaw, false);
+        assert.equal(view.input.listenerCount("keypress"), 0);
+        assert.equal(view.output.listenerCount("resize"), 0);
+        assert.deepEqual(
+          signals.map((signal) => process.listenerCount(signal)),
+          before,
+        );
+      }
+    }
+  },
+);
+
+test("API key input refuses terminals where echo cannot be disabled and restores an existing raw mode", async (t) => {
+  const unsupported = terminal(t, true);
+  Object.defineProperty(unsupported.input, "setRawMode", { value: undefined });
+  await assert.rejects(unsupported.ui.apiKey("openai"), InteractionError);
+  assert.equal(unsupported.text(), "");
+  const raw = terminal(t);
+  raw.input.isRaw = true;
+  const pending = raw.ui.apiKey("openai");
+  raw.input.write("\r");
+  assert.equal(await pending, null);
+  assert.equal(raw.input.isRaw, true);
+});
 
 test(
   "plain secret review accepts only an explicit continue and otherwise aborts",

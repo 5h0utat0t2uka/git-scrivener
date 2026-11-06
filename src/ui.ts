@@ -2,10 +2,12 @@ import { isUtf8 } from "node:buffer";
 import { stdin, stdout, stderr } from "node:process";
 import { createInterface, emitKeypressEvents } from "node:readline";
 import type { Key } from "node:readline";
-import type { Readable, Writable } from "node:stream";
+import { Writable } from "node:stream";
+import type { Readable } from "node:stream";
 import type { ReadStream } from "node:tty";
 import { styleText } from "node:util";
-import { getColumns, SelectPrompt, wrapTextWithPrefix } from "@clack/core";
+import { getColumns, PasswordPrompt, SelectPrompt, wrapTextWithPrefix } from "@clack/core";
+import { InteractionError } from "./review.ts";
 import {
   S_BAR,
   S_RADIO_ACTIVE,
@@ -285,6 +287,71 @@ export function createUi({
         throw error;
       } finally {
         stop?.();
+      }
+    },
+    async apiKey(provider: "openai" | "anthropic"): Promise<string | null> {
+      const terminalInput = input as ReadStream;
+      if (!terminalInput.isTTY || typeof terminalInput.setRawMode !== "function") {
+        throw new InteractionError(
+          "Cannot hide API key input in this terminal. Set the provider's API key environment variable instead.",
+        );
+      }
+      if (input.readableEnded || input.destroyed) return null;
+      const providerName = provider === "openai" ? "OpenAI" : "Anthropic";
+      const title = `${providerName} API key (input hidden)`;
+      const controller = new AbortController();
+      const interrupt = () => controller.abort();
+      const wasRaw = terminalInput.isRaw ?? false;
+      const wasFlowing = input.readableFlowing === true;
+      // Clack still handles editing in plain mode, but none of its cursor commands are emitted.
+      const muted = plain
+        ? new Writable({
+            write(_chunk, _encoding, done) {
+              done();
+            },
+          })
+        : undefined;
+      input.once("end", interrupt);
+      input.once("close", interrupt);
+      process.once("SIGINT", interrupt);
+      process.once("SIGTERM", interrupt);
+      try {
+        if (plain) output.write(`${title}: `);
+        const value = await new PasswordPrompt({
+          input,
+          output: muted ?? output,
+          signal: controller.signal,
+          mask: "",
+          render() {
+            if (plain) return "";
+            const guide = styleText("gray", S_BAR);
+            const heading = wrapTextWithPrefix(
+              output,
+              title,
+              `${guide}  `,
+              `${styleText("green", stepSymbol)}  `,
+            );
+            const status =
+              this.state === "cancel" || (this.state === "submit" && !this.value?.trim())
+                ? "Cancelled"
+                : this.state === "submit"
+                  ? "Provided for this run"
+                  : "Enter a key, or press Enter without input to cancel.";
+            // Never render userInput, value, or even the length of the credential.
+            return `${guide}\n${heading}\n${wrapTextWithPrefix(output, styleText("dim", status), `${guide}  `)}`;
+          },
+        }).prompt();
+        return isCancel(value) || !value?.trim() ? null : value.trim();
+      } finally {
+        input.off("end", interrupt);
+        input.off("close", interrupt);
+        process.off("SIGINT", interrupt);
+        process.off("SIGTERM", interrupt);
+        terminalInput.setRawMode(wasRaw);
+        if (wasFlowing) input.resume();
+        else input.pause();
+        muted?.destroy();
+        if (plain) output.write("\n");
       }
     },
     async confirmSecrets(provider: "openai" | "anthropic"): Promise<boolean> {

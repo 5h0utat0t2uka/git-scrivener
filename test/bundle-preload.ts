@@ -5,6 +5,17 @@ import { writeFileSync } from "node:fs";
 Object.defineProperty(process.stdin, "isTTY", { value: true });
 Object.defineProperty(process.stdout, "isTTY", { value: true });
 
+// Pipe-based tests model raw input without touching a real terminal.
+if (process.env.SCRIVENER_TEST_RAW_INPUT === "1") {
+  Object.assign(process.stdin, {
+    isRaw: false,
+    setRawMode(enabled: boolean) {
+      this.isRaw = enabled;
+      return this;
+    },
+  });
+}
+
 const requests: { url: string; body: unknown }[] = [];
 globalThis.fetch = async (url, init) => {
   const request = new Request(url, init);
@@ -13,6 +24,16 @@ globalThis.fetch = async (url, init) => {
       request.url === "https://api.anthropic.com/v1/messages",
   );
   assert.equal(request.method, "POST");
+  if (process.env.SCRIVENER_TEST_EXPECTED_KEY) {
+    assert.equal(
+      request.headers.get("authorization"),
+      `Bearer ${process.env.SCRIVENER_TEST_EXPECTED_KEY}`,
+    );
+  }
+  if (process.env.SCRIVENER_TEST_LOCAL_KEY === "1") {
+    assert.equal(process.env.OPENAI_API_KEY, undefined);
+    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
+  }
   const body = (await request.json()) as { model: string; instructions?: string; system?: string };
   requests.push({ url: request.url, body });
   writeFileSync("requests.json", JSON.stringify(requests));

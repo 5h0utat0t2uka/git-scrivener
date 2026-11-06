@@ -63,7 +63,7 @@ This permits all findings of that rule in that file, including removed lines. Th
 
 ## Runtime API keys
 
-The module inherits `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from the environment. It does not read secret contents during Nix evaluation, provide an inline API-key option, or depend on SOPS. Key provisioning remains the consumer's responsibility.
+The module inherits `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from the environment. If the selected key is unset, the CLI prompts for hidden input in an interactive terminal. The entered key stays in memory for this run and is not added to the environment of Git hooks or editors. No file is saved. For repeated use without prompting, configure one of the wrappers below. The module does not read secret contents during Nix evaluation, provide an inline API-key option, or depend on SOPS.
 
 Choose either a local key file or your existing SOPS setup below. Add the program configuration to your existing Home Manager configuration; keep your current system, username, home directory, and `home.stateVersion`. Remove any previous direct `home.packages` installation of `git-scrivener` or its wrapper to avoid competing executables; the module handles installation.
 

@@ -67,6 +67,7 @@ Options:
 
 Generation sends the inspected diff to the selected provider.
 Set OPENAI_API_KEY for OpenAI or ANTHROPIC_API_KEY for Anthropic at runtime.
+If unset, an interactive terminal prompts for the key without displaying or saving it.
 Files are never staged automatically. A commit requires explicit confirmation.`);
     return;
   }
@@ -91,8 +92,8 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   });
   const allowSecrets = parseSecretAllowances(values["allow-secret"] ?? []);
   if (!values.check) {
-    requireApiKey(settings.provider);
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      requireApiKey(settings.provider);
       throw new InteractionError(
         "An interactive terminal is required. Use --check to inspect without generating.",
       );
@@ -108,6 +109,17 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
   if (ui === undefined) throw new InteractionError("An interactive terminal is required.");
   const terminal = ui;
   terminal.files(snapshot.files);
+  // Keep entered credentials local to generation, outside process.env and Git/editor children.
+  const generationEnv = { ...process.env };
+  const keyName = settings.provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+  if (!generationEnv[keyName]?.trim()) {
+    const key = await terminal.apiKey(settings.provider);
+    if (key === null) {
+      terminal.cancel();
+      return;
+    }
+    generationEnv[keyName] = key;
+  }
   async function generate(previousCandidate?: string) {
     await assertSnapshotUnchanged(snapshot);
     return terminal.progress(
@@ -117,6 +129,7 @@ Files are never staged automatically. A commit requires explicit confirmation.`)
         assembleCommitMessage(
           await generateCandidate(snapshot.diff, {
             ...settings,
+            env: generationEnv,
             ...(previousCandidate === undefined ? {} : { previousCandidate }),
             maxInputBytes: Number(limit),
             allowSecrets,

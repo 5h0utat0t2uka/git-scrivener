@@ -25,7 +25,7 @@ With Nix flakes enabled, open a shell in the repository you want to commit to.
 nix shell github:5h0utat0t2uka/git-scrivener
 ```
 
-Set your provider's API key in the shell environment. The default is OpenAI with English commit messages.
+The default is OpenAI with English commit messages. If your provider's API key is not set in the environment, the CLI asks for it with hidden input. The entered key is used only for this run and is not saved. Empty input or cancellation exits without sending a request.
 
 | Provider | Default model | Environment variable |
 | --- | --- | --- |
@@ -40,6 +40,17 @@ git scrivener
 **Confirm** is selected by default. Press Enter to commit, or use the arrow keys to choose **Edit**, **Regenerate**, or **Cancel**. Saving in your Git editor returns you to review. Cancelling keeps your changes staged. If you switch branches or change what is staged during review, run `git scrivener` again.
 
 To generate a Japanese message with Anthropic, run `git scrivener --provider anthropic --language ja`. Use `--model <id>` to select a model that supports Structured Outputs, `--plain` for typed shortcuts, and `--help` for all options.
+
+To try it directly without Home Manager, stage your changes and run either command:
+
+```sh
+# provider: OpenAI, model: gpt-6-luna (Default)
+nix run github:5h0utat0t2uka/git-scrivener
+# provider: Anthropic, model: claude-haiku-5-5, language: ja
+nix run github:5h0utat0t2uka/git-scrivener -- --provider anthropic --language ja
+```
+
+Existing environment variables take precedence. Hidden key entry also works with `--plain`; noninteractive runs cannot prompt. `--help`, `--version`, and `--check` never ask for a key.
 
 For persistent installation and API key setup, see the [Home Manager guide](docs/home-manager.md).
 

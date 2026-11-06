@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -131,6 +131,140 @@ test("generation requires a runtime API key and leaves the index unchanged when 
   assert.match(result.stderr, /OPENAI_API_KEY is not set/);
   assert.equal(repo.git(["ls-files", "--stage", "-z"]), index);
 });
+
+test("an interactive run with no staged changes does not ask for an API key", (t) => {
+  const repo = fixture(t);
+  const result = spawnSync(
+    process.execPath,
+    ["--import", fileURLToPath(new URL("./bundle-preload.ts", import.meta.url)), cli, "--plain"],
+    { cwd: repo.cwd, env: repo.env, input: "", encoding: "utf8", timeout: 5_000 },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No staged changes/);
+  assert.doesNotMatch(result.stdout, /API key/);
+});
+
+for (const provider of ["openai", "anthropic"] as const) {
+  for (const action of [
+    "cancel",
+    "generate",
+    "regenerate",
+    "changed-index",
+    "key-in-diff",
+    "environment",
+  ] as const) {
+    test(`${provider} API key input: ${action}`, { timeout: 20_000 }, async (t) => {
+      const repo = fixture(t);
+      const key = `test-entered-${provider}-key`;
+      repo.write("file.txt", action === "key-in-diff" ? `${key}\n` : "staged content\n");
+      repo.git(["add", "file.txt"]);
+      let expectedIndex = repo.git(["ls-files", "--stage", "-z"]);
+      const initialFiles = readdirSync(repo.cwd).sort();
+      const requestFile = join(repo.cwd, "requests.json");
+      const requests = (): unknown[] =>
+        existsSync(requestFile) ? JSON.parse(readFileSync(requestFile, "utf8")) : [];
+      const child = spawn(
+        process.execPath,
+        [
+          "--import",
+          fileURLToPath(new URL("./bundle-preload.ts", import.meta.url)),
+          cli,
+          "--plain",
+          ...(provider === "anthropic" ? ["--provider", provider, "--language", "ja"] : []),
+        ],
+        {
+          cwd: repo.cwd,
+          env: {
+            ...repo.env,
+            TMPDIR: repo.cwd,
+            SCRIVENER_TEST_RAW_INPUT: "1",
+            SCRIVENER_TEST_EXPECTED_KEY: key,
+            ...(action === "environment"
+              ? { [provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"]: key }
+              : { SCRIVENER_TEST_LOCAL_KEY: "1" }),
+          },
+          stdio: ["pipe", "pipe", "pipe"],
+          timeout: 15_000,
+        },
+      );
+      t.after(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      });
+      let output = "";
+      let errors = "";
+      let remaining = "";
+      let keyPrompts = 0;
+      let reviews = 0;
+      let interactionError: unknown;
+      child.stderr.on("data", (chunk: Buffer) => {
+        errors += chunk.toString();
+      });
+      child.stdout.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+        remaining += chunk.toString();
+        try {
+          let prompt;
+          while (
+            (prompt = /(OpenAI|Anthropic) API key \(input hidden\): |default: cancel\): /.exec(
+              remaining,
+            ))
+          ) {
+            remaining = remaining.slice(prompt.index + prompt[0].length);
+            if (prompt[1]) {
+              keyPrompts++;
+              assert.equal(keyPrompts, 1, "reuse an entered key for regeneration");
+              assert.equal(prompt[1], provider === "openai" ? "OpenAI" : "Anthropic");
+              assert.equal(requests().length, 0);
+              if (action === "changed-index") {
+                repo.write("file.txt", "new staged content\n");
+                repo.git(["add", "file.txt"]);
+                expectedIndex = repo.git(["ls-files", "--stage", "-z"]);
+              }
+              if (action === "cancel") child.stdin.end("\r");
+              else if (action === "changed-index" || action === "key-in-diff")
+                child.stdin.end(`${key}\r`);
+              else child.stdin.write(`${key}\r`);
+            } else {
+              reviews++;
+              assert.equal(requests().length, reviews);
+              if (action === "regenerate" && reviews === 1) child.stdin.write("r\n");
+              else child.stdin.end("q\n");
+            }
+          }
+        } catch (error) {
+          interactionError = error;
+          child.kill("SIGKILL");
+        }
+      });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code) => resolve(code));
+      });
+      assert.ifError(interactionError);
+      assert.equal(
+        code,
+        action === "changed-index" || action === "key-in-diff" ? 1 : 0,
+        output + errors,
+      );
+      assert.equal(keyPrompts, action === "environment" ? 0 : 1);
+      const expectedRequests =
+        action === "regenerate" ? 2 : action === "generate" || action === "environment" ? 1 : 0;
+      assert.equal(reviews, expectedRequests);
+      assert.equal(requests().length, expectedRequests);
+      if (action === "key-in-diff") assert.match(errors, /API key occurs/);
+      if (action === "changed-index") assert.match(errors, /staged contents changed/);
+      assert.equal((output + errors).includes(key), false);
+      assert.equal(output.includes("\x1b"), false, "plain key input emits no cursor commands");
+      assert.deepEqual(
+        readdirSync(repo.cwd).sort(),
+        [...initialFiles, ...(expectedRequests ? ["requests.json"] : [])].sort(),
+      );
+      assert.equal(repo.git(["ls-files", "--stage", "-z"]), expectedIndex);
+      repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], { status: 1 });
+    });
+  }
+}
 
 for (const provider of ["openai", "anthropic"] as const) {
   for (const action of [
