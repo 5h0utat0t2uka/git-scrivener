@@ -4,7 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    git-hooks.url = "github:cachix/git-hooks.nix";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Evaluate the exported module against Home Manager in the flake checks.
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -95,30 +98,23 @@
           default = scrivener;
           git-scrivener = scrivener;
         };
-        apps.default = {
-          type = "app";
-          program = "${scrivener}/bin/git-scrivener";
-        };
-        apps.git-scrivener = {
-          type = "app";
-          program = "${scrivener}/bin/git-scrivener";
-        };
-        apps.skills-install-local = {
-          type = "app";
-          program = "${skillsInstall}/bin/skills-install-local";
+        apps = rec {
+          default = git-scrivener;
+          git-scrivener = {
+            type = "app";
+            program = "${scrivener}/bin/git-scrivener";
+          };
+          skills-install-local = {
+            type = "app";
+            program = "${skillsInstall}/bin/skills-install-local";
+          };
         };
         devShells.default = pkgs.mkShell {
           packages = [
             nodejs
             pnpm
             pkgs.git
-            pkgs.age
-            pkgs.betterleaks
-            pkgs.prek
-            pkgs.semgrep
-            pkgs.sops
             pkgs.typescript-language-server
-            pkgs.zizmor
           ]
           ++ preCommit.enabledPackages;
           shellHook = ''

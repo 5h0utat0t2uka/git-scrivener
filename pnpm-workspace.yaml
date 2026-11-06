@@ -9,13 +9,7 @@ allowBuilds:
 blockExoticSubdeps: true
 
 verifyDepsBeforeRun: install
-
 trustPolicy: no-downgrade
-trustPolicyExclude:
-  # Legacy v6 release without provenance:
-  # https://github.com/npm/node-semver/issues/886
-  - semver@6.3.1
-
 minimumReleaseAge: 10080
 # minimumReleaseAgeExclude:
 #   - react

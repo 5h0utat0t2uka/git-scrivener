@@ -26,16 +26,9 @@ git-hooks.lib.${system}.run {
           exec "${pnpm}/bin/pnpm" test
         ''
       );
-      files = "^((src|test)/.*\\.ts|package\\.json|pnpm-lock\\.yaml|tsconfig(\\.build)?\\.json)$";
+      files = "^((src|test)/.*\\.ts|package\\.json|pnpm-lock\\.yaml|tsconfig\\.json)$";
       pass_filenames = false;
     };
-    # biome = {
-    #   enable = true;
-    #   name = "biome";
-    #   package = pkgs.biome;
-    #   entry = "${pkgs.biome}/bin/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched";
-    #   pass_filenames = true;
-    # };
     oxfmt = {
       enable = true;
       package = pkgs.oxfmt;
@@ -51,6 +44,7 @@ git-hooks.lib.${system}.run {
     betterleaks = {
       enable = true;
       name = "betterleaks";
+      package = pkgs.betterleaks;
       entry = "${pkgs.betterleaks}/bin/betterleaks git --pre-commit --redact --staged --verbose";
       pass_filenames = false;
     };
@@ -64,6 +58,7 @@ git-hooks.lib.${system}.run {
     zizmor = {
       enable = true;
       name = "zizmor";
+      package = pkgs.zizmor;
       entry = "${pkgs.zizmor}/bin/zizmor --collect=workflows,actions .";
       files = "^\\.github/(workflows|actions)/.*";
       pass_filenames = false;
