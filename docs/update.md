@@ -13,7 +13,9 @@ Dependabotのnpm・Nix更新PRは、依存ハッシュの更新とビルド検�
 
 ハッシュ更新コミットには`[dependabot skip]`を付けます。これはCIをスキップする指定ではなく、Dependabotが再ベース時にこの自動生成コミットを置き換えるための指定です。再ベース後はハッシュを再計算します。[Dependabotの追加コミットの扱い](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/manage-dependabot-prs#allowing-dependabot-to-rebase-and-force-push-over-extra-commits)
 
-検証対象は、`aarch64-darwin`・`x86_64-darwin`・`aarch64-linux`・`x86_64-linux`です。各環境でパッケージ本体とHome Managerモジュールをビルドします。本体のビルドには型検査・Lint・ソーステスト・バンドルの結合テストが含まれます。実APIやYubiKey、Home Managerのswitchは使いません。
+検証対象は、`aarch64-darwin`・`aarch64-linux`・`x86_64-linux`の3環境です。各環境でパッケージ本体とHome Managerモジュールをビルドします。本体のビルドには型検査・Lint・ソーステスト・バンドルの結合テストが含まれます。実APIやYubiKey、Home Managerのswitchは使いません。
+
+Intel Mac（`x86_64-darwin`）は、使用中のNixpkgsでサポートが終了しているため対象外です。flakeの出力・パッケージの`meta.platforms`・CIのmatrixを同じ対応環境に揃えます。[固定済みNixpkgsの定義](https://github.com/NixOS/nixpkgs/blob/4fe25e12eb9f4c744966dd3de5a05246cf098601/pkgs/top-level/default.nix#L75-L107)
 
 GitHub Actions自体の更新もDependabotが提案します。Actions更新PRではハッシュ再計算は行わず、ビルドを検証して手動でマージします。
 

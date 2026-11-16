@@ -19,6 +19,8 @@ Generate a [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/)
 
 ## Quick start
 
+Nix packages support Apple Silicon macOS and Linux (x86_64/aarch64). Intel macOS is unsupported by the current Nixpkgs input.
+
 With Nix flakes enabled, open a shell in the repository you want to commit to.
 
 ```sh
