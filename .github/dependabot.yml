@@ -1,6 +1,25 @@
 version: 2
 
 updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "04:00"
+      timezone: "Asia/Tokyo"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(ci)"
+    assignees:
+      - "5h0utat0t2uka"
+
   - package-ecosystem: "npm"
     directories:
       - "/"

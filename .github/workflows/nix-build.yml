@@ -1,0 +1,71 @@
+name: Nix build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  automation:
+    name: Automation tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test .github/scripts/*.test.mjs
+
+  build:
+    name: Build (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: x86_64-darwin
+            runner: macos-15-intel
+          - system: aarch64-darwin
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - name: Build the package and check Home Manager
+        env:
+          NIX_SYSTEM: ${{ matrix.system }}
+        run: >-
+          nix build --no-link --no-write-lock-file --print-build-logs
+          ".#packages.$NIX_SYSTEM.git-scrivener"
+          ".#checks.$NIX_SYSTEM.home-manager"
+
+  required:
+    name: Nix checks
+    if: always()
+    needs: [automation, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every check to succeed
+        env:
+          AUTOMATION_RESULT: ${{ needs.automation.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          test "$AUTOMATION_RESULT" = success
+          test "$BUILD_RESULT" = success

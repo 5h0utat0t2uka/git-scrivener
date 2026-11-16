@@ -1,0 +1,77 @@
+name: Apply dependency hash
+
+on:
+  # Required privilege boundary: trusted scripts only, validated hash data,
+  # no PR checkout/execution, no shared cache. See docs/update.md.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Update dependency hash]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: apply-dependency-hash-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Only trusted default-branch automation is checked out in this workflow.
+      # PR files and artifacts are data; no Nix, builds, or PR scripts run here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Verify the source run and current PR
+        id: report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { findArtifact } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/apply-pnpm-hash.mjs`);
+            const id = await findArtifact(github, context);
+            if (id !== null) core.setOutput('artifact-id', String(id));
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.report.outputs.artifact-id != ''
+        with:
+          artifact-ids: ${{ steps.report.outputs.artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/dependency-hash-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Create a repository-scoped writer token
+        if: steps.report.outputs.artifact-id != ''
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.DEPENDENCY_UPDATER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDENCY_UPDATER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - name: Commit only the hash to the unchanged PR head
+        if: steps.report.outputs.artifact-id != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          script: |
+            const fs = await import('node:fs/promises');
+            const { applyHash } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/apply-pnpm-hash.mjs`);
+            const path = `${process.env.RUNNER_TEMP}/dependency-hash-report/hash.json`;
+            const stat = await fs.lstat(path);
+            if (!stat.isFile() || stat.size > 1024) throw new Error('Invalid hash report file.');
+            const report = await fs.readFile(path, 'utf8');
+            const result = await applyHash(github, getOctokit(process.env.APP_TOKEN), context, report);
+            core.info(result);
+            await core.summary.addRaw(result).write();
