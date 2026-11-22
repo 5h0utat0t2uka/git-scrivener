@@ -77,6 +77,16 @@ test(
   },
 );
 
+test("wrapped menu instructions keep the timeline guide on each row", async (t) => {
+  const view = terminal(t);
+  view.output.columns = 22;
+  const result = view.ui.prompt();
+  const initial = stripVTControlCharacters(view.text());
+  view.input.write("\x03");
+  assert.equal(await result, null);
+  assert.match(initial, /│  ↑\/↓ to navigate • *\n│  Enter: confirm/);
+});
+
 test(
   "Ctrl-C, Ctrl-D, Escape, and EOF cancel and restore terminal mode",
   { timeout: 5_000 },
