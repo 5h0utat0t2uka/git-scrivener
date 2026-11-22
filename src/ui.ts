@@ -14,7 +14,6 @@ import {
   S_RADIO_INACTIVE,
   S_STEP_ERROR,
   SELECT_INSTRUCTIONS,
-  formatInstructionFooter,
   isCancel,
   limitOptions,
   log,
@@ -418,10 +417,9 @@ export function createUi({
             const label = this.state === "cancel" ? "Cancelled" : this.options[this.cursor]!.label;
             return `${title}${wrapTextWithPrefix(output, styleText("dim", label), prefix)}`;
           }
+          const instructions = SELECT_INSTRUCTIONS.join(" • ");
           const footer = [
-            ...formatInstructionFooter(SELECT_INSTRUCTIONS, false).map(
-              (line) => `${prefix}${line}`,
-            ),
+            ...(wrappedRows(instructions) ?? [instructions]).map((line) => `${prefix}${line}`),
             guide,
           ];
           const choices = limitOptions({
